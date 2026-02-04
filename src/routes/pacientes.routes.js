@@ -16,7 +16,9 @@ const {
   pacienteParamsSchema,
   searchPacienteSchema,
   pacienteQuerySchema,
-  byDniQuerySchema
+  byDniQuerySchema,
+  addAsignacionBodySchema,
+  asignacionParamsSchema
 } = require('../validators/paciente.validator');
 
 // GET / - Listar pacientes
@@ -44,6 +46,34 @@ router.get(
   requirePermission('pacientes.leer'),
   validateQuery(byDniQuerySchema),
   pacientesController.getByDni
+);
+
+// GET /:id/asignaciones - Listar profesionales asignados al paciente
+router.get(
+  '/:id/asignaciones',
+  authenticate,
+  requirePermission('pacientes.actualizar'),
+  validateParams(pacienteParamsSchema),
+  pacientesController.listAsignaciones
+);
+
+// POST /:id/asignaciones - Asignar profesional al paciente
+router.post(
+  '/:id/asignaciones',
+  authenticate,
+  requirePermission('pacientes.actualizar'),
+  validateParams(pacienteParamsSchema),
+  validateBody(addAsignacionBodySchema),
+  pacientesController.addAsignacion
+);
+
+// DELETE /:id/asignaciones/:profesionalId - Quitar asignación
+router.delete(
+  '/:id/asignaciones/:profesionalId',
+  authenticate,
+  requirePermission('pacientes.actualizar'),
+  validateParams(asignacionParamsSchema),
+  pacientesController.removeAsignacion
 );
 
 // GET /:id - Obtener paciente por ID

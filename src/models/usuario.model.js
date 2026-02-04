@@ -179,6 +179,22 @@ const deactivate = async (id) => {
   }
 };
 
+/**
+ * Contar administradores activos (para asegurar que siempre haya al menos uno)
+ */
+const countActiveAdmins = async () => {
+  try {
+    const result = await query(
+      "SELECT COUNT(*)::int AS count FROM usuarios WHERE rol = 'administrador' AND activo = true",
+      []
+    );
+    return result.rows[0]?.count ?? 0;
+  } catch (error) {
+    logger.error('Error en countActiveAdmins:', error);
+    throw error;
+  }
+};
+
 const updatePassword = async (id, newPassword) => {
   try {
     const saltRounds = 10;
@@ -206,5 +222,6 @@ module.exports = {
   delete: deleteUser,
   activate,
   deactivate,
-  updatePassword
+  updatePassword,
+  countActiveAdmins
 };

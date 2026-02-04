@@ -8,15 +8,18 @@
 const turnoModel = require('../models/turno.model');
 const profesionalModel = require('../models/profesional.model');
 const pacienteModel = require('../models/paciente.model');
+const pacienteProfesionalModel = require('../models/pacienteProfesional.model');
 const bloqueModel = require('../models/bloque.model');
 const agendaModel = require('../models/agenda.model');
+const excepcionAgendaModel = require('../models/excepcionAgenda.model');
 const emailService = require('../services/email.service');
 const logger = require('../utils/logger');
 const { buildResponse } = require('../utils/helpers');
 const { ESTADOS_TURNO } = require('../utils/constants');
 
 /**
- * Listar turnos con filtros
+ * Listar turnos con filtros.
+ * Si el usuario es profesional, solo ve sus propios turnos (puede "sacar" sus turnos aunque el paciente no estuviera asignado antes; al crear turno se auto-asigna).
  */
 const getAll = async (req, res, next) => {
   try {
@@ -29,6 +32,14 @@ const getAll = async (req, res, next) => {
     if (fecha_inicio) filters.fecha_inicio = fecha_inicio;
     if (fecha_fin) filters.fecha_fin = fecha_fin;
     
+    if (req.user.rol === 'profesional') {
+      const profesional = await profesionalModel.findByUserId(req.user.id);
+      if (!profesional) {
+        return res.status(403).json(buildResponse(false, null, 'Profesional no encontrado'));
+      }
+      filters.profesional_id = profesional.id;
+    }
+    
     const turnos = await turnoModel.findAll(filters);
     
     res.json(buildResponse(true, turnos, 'Turnos obtenidos exitosamente'));
@@ -39,7 +50,8 @@ const getAll = async (req, res, next) => {
 };
 
 /**
- * Obtener turno por ID
+ * Obtener turno por ID.
+ * Si el usuario es profesional, solo puede ver/operar sus propios turnos (puede "sacar" el turno).
  */
 const getById = async (req, res, next) => {
   try {
@@ -50,6 +62,13 @@ const getById = async (req, res, next) => {
       return res.status(404).json(buildResponse(false, null, 'Turno no encontrado'));
     }
     
+    if (req.user.rol === 'profesional') {
+      const profesional = await profesionalModel.findByUserId(req.user.id);
+      if (!profesional || turno.profesional_id !== profesional.id) {
+        return res.status(403).json(buildResponse(false, null, 'No tiene permiso para ver este turno'));
+      }
+    }
+    
     res.json(buildResponse(true, turno, 'Turno obtenido exitosamente'));
   } catch (error) {
     logger.error('Error en getById turno:', error);
@@ -58,12 +77,20 @@ const getById = async (req, res, next) => {
 };
 
 /**
- * Obtener turnos de un profesional
+ * Obtener turnos de un profesional.
+ * Si el usuario es profesional, solo puede consultar sus propios turnos.
  */
 const getByProfesional = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { fecha_inicio, fecha_fin } = req.query;
+    
+    if (req.user.rol === 'profesional') {
+      const profesional = await profesionalModel.findByUserId(req.user.id);
+      if (!profesional || profesional.id !== id) {
+        return res.status(403).json(buildResponse(false, null, 'Solo puede ver sus propios turnos'));
+      }
+    }
     
     const turnos = await turnoModel.findByProfesional(id, fecha_inicio || null, fecha_fin || null);
     
@@ -75,12 +102,24 @@ const getByProfesional = async (req, res, next) => {
 };
 
 /**
- * Obtener turnos de un paciente
+ * Obtener turnos de un paciente.
+ * Si el usuario es profesional, solo puede ver turnos del paciente si lo tiene asignado (o es su turno; los turnos propios se listan por getByProfesional).
  */
 const getByPaciente = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { fecha_inicio, fecha_fin } = req.query;
+    
+    if (req.user.rol === 'profesional') {
+      const profesional = await profesionalModel.findByUserId(req.user.id);
+      if (!profesional) {
+        return res.status(403).json(buildResponse(false, null, 'Profesional no encontrado'));
+      }
+      const pacienteIds = await pacienteProfesionalModel.getPacienteIdsByProfesional(profesional.id);
+      if (!pacienteIds.includes(id)) {
+        return res.status(403).json(buildResponse(false, null, 'No tiene asignado este paciente'));
+      }
+    }
     
     const turnos = await turnoModel.findByPaciente(id, fecha_inicio || null, fecha_fin || null);
     
@@ -159,10 +198,11 @@ const create = async (req, res, next) => {
       return res.status(400).json(buildResponse(false, null, 'No se pueden crear turnos para pacientes inactivos'));
     }
     
-    // Verificar que el profesional atiende ese día y horario (agenda vigente: no permitir turnos en días desactivados)
+    // Verificar que el profesional atiende ese día y horario: agenda semanal vigente O día puntual (excepción)
     const fechaHoraInicio = new Date(fecha_hora_inicio);
     const cubiertoPorAgenda = await agendaModel.vigentConfigCoversDateTime(profesional_id, fechaHoraInicio);
-    if (!cubiertoPorAgenda) {
+    const cubiertoPorExcepcion = await excepcionAgendaModel.coversDateTime(profesional_id, fechaHoraInicio);
+    if (!cubiertoPorAgenda && !cubiertoPorExcepcion) {
       return res.status(400).json(buildResponse(false, null, 'No se pueden crear turnos en días u horarios en que el profesional no atiende'));
     }
     
@@ -197,7 +237,18 @@ const create = async (req, res, next) => {
     });
     
     logger.info('Turno creado:', { id: nuevoTurno.id, profesional_id, paciente_id, fecha_hora_inicio });
-    
+
+    // Asignar automáticamente al profesional al paciente (para que pueda verlo y cargar evoluciones, notas, archivos)
+    try {
+      await pacienteProfesionalModel.create({
+        paciente_id,
+        profesional_id,
+        asignado_por_usuario_id: req.user.id
+      });
+    } catch (err) {
+      logger.error('Error auto-asignando profesional al paciente:', err);
+    }
+
     // Obtener el turno completo con datos relacionados
     const turnoCompleto = await turnoModel.findById(nuevoTurno.id);
     // Envío de email en segundo plano (no bloquea la respuesta)
@@ -213,17 +264,24 @@ const create = async (req, res, next) => {
 };
 
 /**
- * Actualizar turno
+ * Actualizar turno.
+ * Si el usuario es profesional, solo puede actualizar sus propios turnos.
  */
 const update = async (req, res, next) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
     
-    // Verificar que el turno existe
     const turno = await turnoModel.findById(id);
     if (!turno) {
       return res.status(404).json(buildResponse(false, null, 'Turno no encontrado'));
+    }
+    
+    if (req.user.rol === 'profesional') {
+      const profesional = await profesionalModel.findByUserId(req.user.id);
+      if (!profesional || turno.profesional_id !== profesional.id) {
+        return res.status(403).json(buildResponse(false, null, 'No tiene permiso para editar este turno'));
+      }
     }
     
     // Si se cambia la fecha/hora, verificar agenda vigente y disponibilidad
@@ -232,7 +290,8 @@ const update = async (req, res, next) => {
       const fechaHoraFin = updateData.fecha_hora_fin ? new Date(updateData.fecha_hora_fin) : new Date(turno.fecha_hora_fin);
       
       const cubiertoPorAgenda = await agendaModel.vigentConfigCoversDateTime(turno.profesional_id, fechaHoraInicio);
-      if (!cubiertoPorAgenda) {
+      const cubiertoPorExcepcion = await excepcionAgendaModel.coversDateTime(turno.profesional_id, fechaHoraInicio);
+      if (!cubiertoPorAgenda && !cubiertoPorExcepcion) {
         return res.status(400).json(buildResponse(false, null, 'No se pueden asignar turnos en días u horarios en que el profesional no atiende'));
       }
       
@@ -267,7 +326,8 @@ const update = async (req, res, next) => {
 };
 
 /**
- * Cancelar turno
+ * Cancelar turno.
+ * Si el usuario es profesional, solo puede cancelar sus propios turnos.
  */
 const cancel = async (req, res, next) => {
   try {
@@ -275,10 +335,16 @@ const cancel = async (req, res, next) => {
     const { razon_cancelacion } = req.body;
     const canceladoPor = req.user?.id || null;
     
-    // Verificar que el turno existe
     const turno = await turnoModel.findById(id);
     if (!turno) {
       return res.status(404).json(buildResponse(false, null, 'Turno no encontrado'));
+    }
+    
+    if (req.user.rol === 'profesional') {
+      const profesional = await profesionalModel.findByUserId(req.user.id);
+      if (!profesional || turno.profesional_id !== profesional.id) {
+        return res.status(403).json(buildResponse(false, null, 'No tiene permiso para cancelar este turno'));
+      }
     }
     
     if (turno.estado === ESTADOS_TURNO.CANCELADO) {
@@ -300,16 +366,23 @@ const cancel = async (req, res, next) => {
 };
 
 /**
- * Confirmar turno
+ * Confirmar turno.
+ * Si el usuario es profesional, solo puede confirmar sus propios turnos.
  */
 const confirm = async (req, res, next) => {
   try {
     const { id } = req.params;
     
-    // Verificar que el turno existe
     const turno = await turnoModel.findById(id);
     if (!turno) {
       return res.status(404).json(buildResponse(false, null, 'Turno no encontrado'));
+    }
+    
+    if (req.user.rol === 'profesional') {
+      const profesional = await profesionalModel.findByUserId(req.user.id);
+      if (!profesional || turno.profesional_id !== profesional.id) {
+        return res.status(403).json(buildResponse(false, null, 'No tiene permiso para confirmar este turno'));
+      }
     }
     
     if (turno.estado === ESTADOS_TURNO.CONFIRMADO) {
@@ -339,16 +412,23 @@ const confirm = async (req, res, next) => {
 };
 
 /**
- * Completar turno
+ * Completar turno.
+ * Si el usuario es profesional, solo puede completar sus propios turnos ("sacar" el turno).
  */
 const complete = async (req, res, next) => {
   try {
     const { id } = req.params;
     
-    // Verificar que el turno existe
     const turno = await turnoModel.findById(id);
     if (!turno) {
       return res.status(404).json(buildResponse(false, null, 'Turno no encontrado'));
+    }
+    
+    if (req.user.rol === 'profesional') {
+      const profesional = await profesionalModel.findByUserId(req.user.id);
+      if (!profesional || turno.profesional_id !== profesional.id) {
+        return res.status(403).json(buildResponse(false, null, 'No tiene permiso para completar este turno'));
+      }
     }
     
     if (turno.estado === ESTADOS_TURNO.COMPLETADO) {
@@ -374,7 +454,8 @@ const complete = async (req, res, next) => {
 };
 
 /**
- * Eliminar turno
+ * Eliminar turno.
+ * Si el usuario es profesional, solo puede eliminar sus propios turnos.
  */
 const deleteTurno = async (req, res, next) => {
   try {
@@ -383,6 +464,13 @@ const deleteTurno = async (req, res, next) => {
     const turno = await turnoModel.findById(id);
     if (!turno) {
       return res.status(404).json(buildResponse(false, null, 'Turno no encontrado'));
+    }
+
+    if (req.user.rol === 'profesional') {
+      const profesional = await profesionalModel.findByUserId(req.user.id);
+      if (!profesional || turno.profesional_id !== profesional.id) {
+        return res.status(403).json(buildResponse(false, null, 'No tiene permiso para eliminar este turno'));
+      }
     }
 
     await turnoModel.deleteById(id);

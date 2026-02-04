@@ -94,11 +94,26 @@ const byDniQuerySchema = Joi.object({
     })
 });
 
+const addAsignacionBodySchema = Joi.object({
+  profesional_id: Joi.string().uuid().required()
+    .messages({
+      'string.guid': 'El profesional_id debe ser un UUID válido',
+      'any.required': 'El profesional_id es requerido'
+    })
+});
+
+const asignacionParamsSchema = Joi.object({
+  id: Joi.string().uuid().required(),
+  profesionalId: Joi.string().uuid().required()
+});
+
 module.exports = {
   createPacienteSchema,
   updatePacienteSchema,
   pacienteParamsSchema,
   searchPacienteSchema,
   pacienteQuerySchema,
-  byDniQuerySchema
+  byDniQuerySchema,
+  addAsignacionBodySchema,
+  asignacionParamsSchema
 };

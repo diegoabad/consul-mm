@@ -178,11 +178,48 @@ const deleteById = async (id) => {
   }
 };
 
+/** Convierte hora "HH:mm:ss" o "HH:mm" a minutos desde medianoche */
+function timeToMinutes(timeStr) {
+  if (!timeStr || typeof timeStr !== 'string') return 0;
+  const part = String(timeStr).trim().substring(0, 5);
+  const [h, m] = part.split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+/**
+ * Verificar si el profesional tiene una excepción (día puntual) que cubre esa fecha/hora.
+ * Usado para permitir turnos en días habilitados puntualmente aunque no estén en la agenda semanal.
+ * @param {string} profesionalId - UUID del profesional
+ * @param {Date} fechaHora - Fecha y hora de inicio del turno
+ * @returns {Promise<boolean>} true si hay al menos una excepción para ese día y esa hora dentro del rango
+ */
+const coversDateTime = async (profesionalId, fechaHora) => {
+  try {
+    const year = fechaHora.getFullYear();
+    const month = String(fechaHora.getMonth() + 1).padStart(2, '0');
+    const day = String(fechaHora.getDate()).padStart(2, '0');
+    const fechaStr = `${year}-${month}-${day}`;
+    const minutos = fechaHora.getHours() * 60 + fechaHora.getMinutes();
+
+    const excepciones = await findByProfesionalAndDateRange(profesionalId, fechaStr, fechaStr);
+    for (const ex of excepciones) {
+      const inicioMin = timeToMinutes(ex.hora_inicio);
+      const finMin = timeToMinutes(ex.hora_fin);
+      if (minutos >= inicioMin && minutos < finMin) return true;
+    }
+    return false;
+  } catch (error) {
+    logger.error('Error en coversDateTime excepciones_agenda:', error);
+    throw error;
+  }
+};
+
 module.exports = {
   findAll,
   findById,
   findByProfesionalAndDateRange,
   create,
   update,
-  delete: deleteById
+  delete: deleteById,
+  coversDateTime
 };

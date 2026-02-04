@@ -6,11 +6,13 @@
  */
 
 const pacienteModel = require('../models/paciente.model');
+const profesionalModel = require('../models/profesional.model');
+const pacienteProfesionalModel = require('../models/pacienteProfesional.model');
 const logger = require('../utils/logger');
 const { buildResponse } = require('../utils/helpers');
 
 /**
- * Listar todos los pacientes
+ * Listar todos los pacientes (para profesional solo los asignados)
  */
 const getAll = async (req, res, next) => {
   try {
@@ -19,6 +21,18 @@ const getAll = async (req, res, next) => {
     
     if (activo !== undefined) filters.activo = activo === 'true';
     if (obra_social) filters.obra_social = obra_social;
+    
+    if (req.user.rol === 'profesional') {
+      const profesional = await profesionalModel.findByUserId(req.user.id);
+      if (!profesional) {
+        return res.json(buildResponse(true, [], 'Pacientes obtenidos exitosamente'));
+      }
+      const pacienteIds = await pacienteProfesionalModel.getPacienteIdsByProfesional(profesional.id);
+      if (pacienteIds.length === 0) {
+        return res.json(buildResponse(true, [], 'Pacientes obtenidos exitosamente'));
+      }
+      filters.ids = pacienteIds;
+    }
     
     const pacientes = await pacienteModel.findAll(filters);
     
@@ -50,7 +64,7 @@ const getByDni = async (req, res, next) => {
 };
 
 /**
- * Obtener paciente por ID
+ * Obtener paciente por ID (profesional solo si está asignado al paciente)
  */
 const getById = async (req, res, next) => {
   try {
@@ -61,6 +75,17 @@ const getById = async (req, res, next) => {
       return res.status(404).json(buildResponse(false, null, 'Paciente no encontrado'));
     }
     
+    if (req.user.rol === 'profesional') {
+      const profesional = await profesionalModel.findByUserId(req.user.id);
+      if (!profesional) {
+        return res.status(403).json(buildResponse(false, null, 'No tiene acceso a este paciente'));
+      }
+      const pacienteIds = await pacienteProfesionalModel.getPacienteIdsByProfesional(profesional.id);
+      if (!pacienteIds.includes(id)) {
+        return res.status(403).json(buildResponse(false, null, 'No tiene acceso a este paciente'));
+      }
+    }
+    
     res.json(buildResponse(true, paciente, 'Paciente obtenido exitosamente'));
   } catch (error) {
     logger.error('Error en getById paciente:', error);
@@ -69,7 +94,7 @@ const getById = async (req, res, next) => {
 };
 
 /**
- * Buscar pacientes por nombre, apellido o DNI
+ * Buscar pacientes por nombre, apellido o DNI (profesional solo entre sus asignados)
  */
 const search = async (req, res, next) => {
   try {
@@ -79,7 +104,20 @@ const search = async (req, res, next) => {
       return res.status(400).json(buildResponse(false, null, 'El término de búsqueda debe tener al menos 2 caracteres'));
     }
     
-    const pacientes = await pacienteModel.search(q);
+    let pacientes = await pacienteModel.search(q);
+    
+    if (req.user.rol === 'profesional') {
+      const profesional = await profesionalModel.findByUserId(req.user.id);
+      if (!profesional) {
+        return res.json(buildResponse(true, [], 'Se encontraron 0 pacientes'));
+      }
+      const pacienteIds = await pacienteProfesionalModel.getPacienteIdsByProfesional(profesional.id);
+      if (pacienteIds.length === 0) {
+        return res.json(buildResponse(true, [], 'Se encontraron 0 pacientes'));
+      }
+      const idSet = new Set(pacienteIds);
+      pacientes = pacientes.filter((p) => idSet.has(p.id));
+    }
     
     res.json(buildResponse(true, pacientes, `Se encontraron ${pacientes.length} pacientes`));
   } catch (error) {
@@ -251,6 +289,84 @@ const deactivate = async (req, res, next) => {
   }
 };
 
+/**
+ * Listar profesionales asignados a un paciente
+ */
+const listAsignaciones = async (req, res, next) => {
+  try {
+    const { id: pacienteId } = req.params;
+    const paciente = await pacienteModel.findById(pacienteId);
+    if (!paciente) {
+      return res.status(404).json(buildResponse(false, null, 'Paciente no encontrado'));
+    }
+    const asignaciones = await pacienteProfesionalModel.findAll({ paciente_id: pacienteId });
+    res.json(buildResponse(true, asignaciones, 'Asignaciones obtenidas exitosamente'));
+  } catch (error) {
+    logger.error('Error en listAsignaciones:', error);
+    next(error);
+  }
+};
+
+/**
+ * Asignar un profesional a un paciente
+ */
+const addAsignacion = async (req, res, next) => {
+  try {
+    const { id: pacienteId } = req.params;
+    let { profesional_id } = req.body;
+    // Asegurar que sea un solo UUID (no array ni múltiples)
+    if (Array.isArray(profesional_id)) {
+      return res.status(400).json(buildResponse(false, null, 'Se debe asignar un solo profesional a la vez'));
+    }
+    if (typeof profesional_id !== 'string') {
+      return res.status(400).json(buildResponse(false, null, 'profesional_id debe ser un UUID válido'));
+    }
+    profesional_id = profesional_id.trim();
+    const paciente = await pacienteModel.findById(pacienteId);
+    if (!paciente) {
+      return res.status(404).json(buildResponse(false, null, 'Paciente no encontrado'));
+    }
+    const profesional = await profesionalModel.findById(profesional_id);
+    if (!profesional) {
+      return res.status(404).json(buildResponse(false, null, 'Profesional no encontrado'));
+    }
+    const row = await pacienteProfesionalModel.create({
+      paciente_id: pacienteId,
+      profesional_id,
+      asignado_por_usuario_id: req.user.id
+    });
+    if (!row) {
+      return res.status(400).json(buildResponse(false, null, 'El profesional ya está asignado a este paciente'));
+    }
+    const asignaciones = await pacienteProfesionalModel.findAll({ paciente_id: pacienteId });
+    res.status(201).json(buildResponse(true, asignaciones, 'Profesional asignado correctamente'));
+  } catch (error) {
+    logger.error('Error en addAsignacion:', error);
+    next(error);
+  }
+};
+
+/**
+ * Quitar asignación de un profesional a un paciente
+ */
+const removeAsignacion = async (req, res, next) => {
+  try {
+    const { id: pacienteId, profesionalId } = req.params;
+    const paciente = await pacienteModel.findById(pacienteId);
+    if (!paciente) {
+      return res.status(404).json(buildResponse(false, null, 'Paciente no encontrado'));
+    }
+    const removed = await pacienteProfesionalModel.remove(pacienteId, profesionalId);
+    if (!removed) {
+      return res.status(404).json(buildResponse(false, null, 'Asignación no encontrada'));
+    }
+    res.json(buildResponse(true, null, 'Asignación eliminada correctamente'));
+  } catch (error) {
+    logger.error('Error en removeAsignacion:', error);
+    next(error);
+  }
+};
+
 module.exports = {
   getAll,
   getByDni,
@@ -260,5 +376,8 @@ module.exports = {
   update,
   delete: deletePaciente,
   activate,
-  deactivate
+  deactivate,
+  listAsignaciones,
+  addAsignacion,
+  removeAsignacion
 };

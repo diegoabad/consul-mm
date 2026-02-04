@@ -8,12 +8,14 @@
 const evolucionModel = require('../models/evolucion.model');
 const pacienteModel = require('../models/paciente.model');
 const profesionalModel = require('../models/profesional.model');
+const pacienteProfesionalModel = require('../models/pacienteProfesional.model');
 const turnoModel = require('../models/turno.model');
 const logger = require('../utils/logger');
 const { buildResponse } = require('../utils/helpers');
 
 /**
- * Listar evoluciones clínicas con filtros
+ * Listar evoluciones clínicas con filtros.
+ * Si el usuario es profesional, solo ve sus propias evoluciones.
  */
 const getAll = async (req, res, next) => {
   try {
@@ -26,6 +28,14 @@ const getAll = async (req, res, next) => {
     if (fecha_inicio) filters.fecha_inicio = fecha_inicio;
     if (fecha_fin) filters.fecha_fin = fecha_fin;
     
+    if (req.user.rol === 'profesional') {
+      const profesional = await profesionalModel.findByUserId(req.user.id);
+      if (!profesional) {
+        return res.status(403).json(buildResponse(false, null, 'Profesional no encontrado'));
+      }
+      filters.profesional_id = profesional.id;
+    }
+    
     const evoluciones = await evolucionModel.findAll(filters);
     
     res.json(buildResponse(true, evoluciones, 'Evoluciones clínicas obtenidas exitosamente'));
@@ -36,7 +46,8 @@ const getAll = async (req, res, next) => {
 };
 
 /**
- * Obtener evolución clínica por ID
+ * Obtener evolución clínica por ID.
+ * Si el usuario es profesional, solo puede ver sus propias evoluciones.
  */
 const getById = async (req, res, next) => {
   try {
@@ -47,6 +58,13 @@ const getById = async (req, res, next) => {
       return res.status(404).json(buildResponse(false, null, 'Evolución clínica no encontrada'));
     }
     
+    if (req.user.rol === 'profesional') {
+      const profesional = await profesionalModel.findByUserId(req.user.id);
+      if (!profesional || evolucion.profesional_id !== profesional.id) {
+        return res.status(403).json(buildResponse(false, null, 'No tiene permiso para ver esta evolución'));
+      }
+    }
+    
     res.json(buildResponse(true, evolucion, 'Evolución clínica obtenida exitosamente'));
   } catch (error) {
     logger.error('Error en getById evolucion:', error);
@@ -55,17 +73,33 @@ const getById = async (req, res, next) => {
 };
 
 /**
- * Obtener evoluciones clínicas de un paciente
+ * Obtener evoluciones clínicas de un paciente.
+ * Si el usuario es profesional, debe estar asignado al paciente y solo ve sus propias evoluciones.
  */
 const getByPaciente = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { fecha_inicio, fecha_fin } = req.query;
     
-    // Verificar que el paciente existe
     const paciente = await pacienteModel.findById(id);
     if (!paciente) {
       return res.status(404).json(buildResponse(false, null, 'Paciente no encontrado'));
+    }
+    
+    if (req.user.rol === 'profesional') {
+      const profesional = await profesionalModel.findByUserId(req.user.id);
+      if (!profesional) {
+        return res.status(403).json(buildResponse(false, null, 'Profesional no encontrado'));
+      }
+      const pacienteIds = await pacienteProfesionalModel.getPacienteIdsByProfesional(profesional.id);
+      if (!pacienteIds.includes(id)) {
+        return res.status(403).json(buildResponse(false, null, 'No tiene asignado este paciente'));
+      }
+      const filters = { paciente_id: id, profesional_id: profesional.id };
+      if (fecha_inicio) filters.fecha_inicio = fecha_inicio;
+      if (fecha_fin) filters.fecha_fin = fecha_fin;
+      const evoluciones = await evolucionModel.findAll(filters);
+      return res.json(buildResponse(true, evoluciones, 'Evoluciones clínicas del paciente obtenidas exitosamente'));
     }
     
     const evoluciones = await evolucionModel.findByPaciente(
@@ -82,17 +116,24 @@ const getByPaciente = async (req, res, next) => {
 };
 
 /**
- * Obtener evoluciones clínicas de un profesional
+ * Obtener evoluciones clínicas de un profesional.
+ * Si el usuario es profesional, solo puede consultar sus propias evoluciones.
  */
 const getByProfesional = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { fecha_inicio, fecha_fin } = req.query;
     
-    // Verificar que el profesional existe
     const profesional = await profesionalModel.findById(id);
     if (!profesional) {
       return res.status(404).json(buildResponse(false, null, 'Profesional no encontrado'));
+    }
+    
+    if (req.user.rol === 'profesional') {
+      const profesionalLogueado = await profesionalModel.findByUserId(req.user.id);
+      if (!profesionalLogueado || profesionalLogueado.id !== id) {
+        return res.status(403).json(buildResponse(false, null, 'Solo puede ver sus propias evoluciones'));
+      }
     }
     
     const evoluciones = await evolucionModel.findByProfesional(
@@ -109,16 +150,23 @@ const getByProfesional = async (req, res, next) => {
 };
 
 /**
- * Obtener evoluciones clínicas de un turno
+ * Obtener evoluciones clínicas de un turno.
+ * Si el usuario es profesional, solo puede ver evoluciones de turnos propios.
  */
 const getByTurno = async (req, res, next) => {
   try {
     const { id } = req.params;
     
-    // Verificar que el turno existe
     const turno = await turnoModel.findById(id);
     if (!turno) {
       return res.status(404).json(buildResponse(false, null, 'Turno no encontrado'));
+    }
+    
+    if (req.user.rol === 'profesional') {
+      const profesional = await profesionalModel.findByUserId(req.user.id);
+      if (!profesional || turno.profesional_id !== profesional.id) {
+        return res.status(403).json(buildResponse(false, null, 'No tiene permiso para ver evoluciones de este turno'));
+      }
     }
     
     const evoluciones = await evolucionModel.findByTurno(id);
@@ -131,13 +179,13 @@ const getByTurno = async (req, res, next) => {
 };
 
 /**
- * Crear nueva evolución clínica
+ * Crear nueva evolución clínica.
+ * Si el usuario es profesional, solo puede crear para sí mismo y debe estar asignado al paciente.
  */
 const create = async (req, res, next) => {
   try {
     const { paciente_id, profesional_id, turno_id, fecha_consulta, motivo_consulta, diagnostico, tratamiento, observaciones } = req.body;
     
-    // Verificar que el paciente existe y está activo
     const paciente = await pacienteModel.findById(paciente_id);
     if (!paciente) {
       return res.status(404).json(buildResponse(false, null, 'Paciente no encontrado'));
@@ -146,13 +194,23 @@ const create = async (req, res, next) => {
       return res.status(400).json(buildResponse(false, null, 'No se puede crear evolución clínica para un paciente inactivo'));
     }
     
-    // Verificar que el profesional existe y no está bloqueado
     const profesional = await profesionalModel.findById(profesional_id);
     if (!profesional) {
       return res.status(404).json(buildResponse(false, null, 'Profesional no encontrado'));
     }
     if (profesional.bloqueado) {
       return res.status(400).json(buildResponse(false, null, 'No se puede crear evolución clínica para un profesional bloqueado'));
+    }
+    
+    if (req.user.rol === 'profesional') {
+      const profesionalLogueado = await profesionalModel.findByUserId(req.user.id);
+      if (!profesionalLogueado || profesionalLogueado.id !== profesional_id) {
+        return res.status(403).json(buildResponse(false, null, 'Solo puede crear evoluciones como profesional asignado a usted'));
+      }
+      const pacienteIds = await pacienteProfesionalModel.getPacienteIdsByProfesional(profesionalLogueado.id);
+      if (!pacienteIds.includes(paciente_id)) {
+        return res.status(403).json(buildResponse(false, null, 'Debe estar asignado al paciente para crear evoluciones'));
+      }
     }
     
     // Si se proporciona turno_id, verificar que existe
@@ -189,17 +247,24 @@ const create = async (req, res, next) => {
 };
 
 /**
- * Actualizar evolución clínica
+ * Actualizar evolución clínica.
+ * Si el usuario es profesional, solo puede actualizar sus propias evoluciones.
  */
 const update = async (req, res, next) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
     
-    // Verificar que la evolución existe
     const evolucionExistente = await evolucionModel.findById(id);
     if (!evolucionExistente) {
       return res.status(404).json(buildResponse(false, null, 'Evolución clínica no encontrada'));
+    }
+    
+    if (req.user.rol === 'profesional') {
+      const profesional = await profesionalModel.findByUserId(req.user.id);
+      if (!profesional || evolucionExistente.profesional_id !== profesional.id) {
+        return res.status(403).json(buildResponse(false, null, 'No tiene permiso para editar esta evolución'));
+      }
     }
     
     // Si se actualiza turno_id, verificar que existe
@@ -232,7 +297,8 @@ const update = async (req, res, next) => {
 };
 
 /**
- * Eliminar evolución clínica
+ * Eliminar evolución clínica.
+ * Si el usuario es profesional, solo puede eliminar sus propias evoluciones.
  */
 const deleteEvolucion = async (req, res, next) => {
   try {
@@ -241,6 +307,13 @@ const deleteEvolucion = async (req, res, next) => {
     const evolucion = await evolucionModel.findById(id);
     if (!evolucion) {
       return res.status(404).json(buildResponse(false, null, 'Evolución clínica no encontrada'));
+    }
+    
+    if (req.user.rol === 'profesional') {
+      const profesional = await profesionalModel.findByUserId(req.user.id);
+      if (!profesional || evolucion.profesional_id !== profesional.id) {
+        return res.status(403).json(buildResponse(false, null, 'No tiene permiso para eliminar esta evolución'));
+      }
     }
     
     const eliminado = await evolucionModel.delete(id);

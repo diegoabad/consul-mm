@@ -4,21 +4,78 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Usuario creado</title>
+  <style>
+    /* Reset para clientes de email */
+    body, table, td, p, a { 
+      -webkit-text-size-adjust: 100%; 
+      -ms-text-size-adjust: 100%; 
+    }
+    table, td { 
+      mso-table-lspace: 0pt; 
+      mso-table-rspace: 0pt; 
+    }
+    img { 
+      -ms-interpolation-mode: bicubic; 
+      border: 0; 
+      height: auto; 
+      line-height: 100%; 
+      outline: none; 
+      text-decoration: none; 
+    }
+    
+    /* Media queries para responsive */
+    @media only screen and (max-width: 600px) {
+      .email-container {
+        width: 100% !important;
+        margin: 0 !important;
+      }
+      .mobile-padding {
+        padding: 20px 16px !important;
+      }
+      .mobile-header-padding {
+        padding: 24px 16px !important;
+      }
+      .mobile-text {
+        font-size: 14px !important;
+      }
+      .mobile-title {
+        font-size: 20px !important;
+      }
+      .mobile-spacing {
+        padding: 16px 12px !important;
+      }
+      .mobile-outer-padding {
+        padding: 20px 12px !important;
+      }
+      .mobile-button {
+        padding: 14px 28px !important;
+        font-size: 15px !important;
+      }
+      .mobile-credential-text {
+        font-size: 14px !important;
+        word-break: break-all !important;
+      }
+      .mobile-password-box {
+        padding: 10px 12px !important;
+        font-size: 14px !important;
+      }
+    }
+  </style>
 </head>
 <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #F9FAFB;">
   
   <!-- Container principal -->
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #F9FAFB;">
     <tr>
-      <td style="padding: 40px 20px;">
+      <td class="mobile-outer-padding" style="padding: 40px 20px;">
         
         <!-- Card del email -->
-        <table role="presentation" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);" cellspacing="0" cellpadding="0">
+        <table role="presentation" class="email-container" style="max-width: 600px; width: 100%; margin: 0 auto; background-color: #ffffff; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);" cellspacing="0" cellpadding="0">
           
           <!-- Header con logo -->
           <tr>
-            <td style="background: linear-gradient(135deg, #2563eb 0%, #0ea5e9 100%); padding: 32px; border-radius: 16px 16px 0 0; text-align: center;">
-              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600; letter-spacing: -0.5px;">
+            <td class="mobile-header-padding" style="background: linear-gradient(135deg, #2563eb 0%, #0ea5e9 100%); padding: 32px; border-radius: 16px 16px 0 0; text-align: center;">
+              <h1 class="mobile-title" style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600; letter-spacing: -0.5px;">
                 Bienvenido al Sistema
               </h1>
             </td>
@@ -26,21 +83,21 @@
           
           <!-- Contenido -->
           <tr>
-            <td style="padding: 40px 32px;">
+            <td class="mobile-padding" style="padding: 40px 32px;">
               
               <!-- Saludo -->
-              <p style="margin: 0 0 24px; font-size: 16px; line-height: 1.6; color: #111827;">
+              <p class="mobile-text" style="margin: 0 0 24px; font-size: 16px; line-height: 1.6; color: #111827;">
                 Hola <strong style="color: #2563eb;">{{nombre}}</strong>,
               </p>
               
-              <p style="margin: 0 0 32px; font-size: 16px; line-height: 1.6; color: #374151;">
+              <p class="mobile-text" style="margin: 0 0 32px; font-size: 16px; line-height: 1.6; color: #374151;">
                 Tu usuario ha sido creado exitosamente. Ya podés acceder al sistema del consultorio con las siguientes credenciales:
               </p>
               
               <!-- Card de credenciales -->
               <table role="presentation" cellspacing="0" cellpadding="0" style="width: 100%; margin-bottom: 32px; background: linear-gradient(135deg, #dbeafe 0%, #e0f2fe 100%); border-radius: 12px; border-left: 4px solid #2563eb;">
                 <tr>
-                  <td style="padding: 24px;">
+                  <td class="mobile-spacing" style="padding: 24px;">
                     <p style="margin: 0 0 16px; font-size: 14px; color: #6B7280; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">
                       Tus credenciales
                     </p>
@@ -48,13 +105,13 @@
                     <!-- Email -->
                     <div style="margin-bottom: 16px;">
                       <p style="margin: 0 0 4px; font-size: 12px; color: #6B7280; text-transform: uppercase; letter-spacing: 0.5px;">Email</p>
-                      <p style="margin: 0; font-size: 16px; font-weight: 600; color: #111827;">{{email}}</p>
+                      <p class="mobile-credential-text" style="margin: 0; font-size: 16px; font-weight: 600; color: #111827; word-wrap: break-word; overflow-wrap: break-word;">{{email}}</p>
                     </div>
                     
                     <!-- Contraseña -->
                     <div>
                       <p style="margin: 0 0 4px; font-size: 12px; color: #6B7280; text-transform: uppercase; letter-spacing: 0.5px;">Contraseña</p>
-                      <p style="margin: 0; font-size: 16px; font-weight: 600; color: #111827; font-family: 'Courier New', monospace; background-color: #ffffff; padding: 12px 16px; border-radius: 8px; display: inline-block;">{{password}}</p>
+                      <p class="mobile-password-box" style="margin: 0; font-size: 16px; font-weight: 600; color: #111827; font-family: 'Courier New', monospace; background-color: #ffffff; padding: 12px 16px; border-radius: 8px; display: inline-block; word-wrap: break-word; max-width: 100%; box-sizing: border-box;">{{password}}</p>
                     </div>
                   </td>
                 </tr>
@@ -64,7 +121,7 @@
               <table role="presentation" cellspacing="0" cellpadding="0" style="width: 100%; margin-bottom: 32px;">
                 <tr>
                   <td style="text-align: center;">
-                    <a href="{{LOGIN_URL}}" style="display: inline-block; background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: #ffffff; padding: 16px 40px; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.3);">
+                    <a href="{{LOGIN_URL}}" class="mobile-button" style="display: inline-block; background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: #ffffff; padding: 16px 40px; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.3); max-width: 90%; box-sizing: border-box;">
                       Acceder al Sistema →
                     </a>
                   </td>
@@ -72,13 +129,13 @@
               </table>
               
               <!-- URL alternativa -->
-              <table role="presentation" cellspacing="0" cellpadding="0" style="width: 100%; margin-bottom: 32px; background-color: #F3F4F6; border-radius: 12px; padding: 20px 24px;">
+              <table role="presentation" cellspacing="0" cellpadding="0" style="width: 100%; margin-bottom: 32px; background-color: #F3F4F6; border-radius: 12px;">
                 <tr>
-                  <td>
+                  <td class="mobile-spacing" style="padding: 20px 24px;">
                     <p style="margin: 0 0 8px; font-size: 13px; color: #6B7280; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">
                       O copia este enlace
                     </p>
-                    <p style="margin: 0; font-size: 14px; color: #2563eb; word-break: break-all;">
+                    <p class="mobile-text" style="margin: 0; font-size: 14px; color: #2563eb; word-break: break-all; overflow-wrap: break-word;">
                       {{LOGIN_URL}}
                     </p>
                   </td>
@@ -88,11 +145,11 @@
               <!-- Aviso de seguridad -->
               <table role="presentation" cellspacing="0" cellpadding="0" style="width: 100%; margin-bottom: 32px; background-color: #FEF3C7; border-radius: 12px; border-left: 4px solid #F59E0B;">
                 <tr>
-                  <td style="padding: 20px 24px;">
+                  <td class="mobile-spacing" style="padding: 20px 24px;">
                     <p style="margin: 0 0 8px; font-size: 14px; font-weight: 600; color: #92400E;">
                       Recomendación de seguridad
                     </p>
-                    <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #78350F;">
+                    <p class="mobile-text" style="margin: 0; font-size: 14px; line-height: 1.6; color: #78350F;">
                       Después de tu primer ingreso, te recomendamos cambiar tu contraseña desde la sección de <strong>Perfil</strong> en el sistema.
                     </p>
                   </td>
@@ -100,7 +157,7 @@
               </table>
               
               <!-- Despedida -->
-              <p style="margin: 0 0 8px; font-size: 16px; line-height: 1.6; color: #374151;">
+              <p class="mobile-text" style="margin: 0 0 8px; font-size: 16px; line-height: 1.6; color: #374151;">
                 Saludos cordiales,
               </p>
               <p style="margin: 0; font-size: 18px; font-weight: 700; color: #2563eb;">
@@ -112,7 +169,7 @@
           
           <!-- Footer -->
           <tr>
-            <td style="padding: 24px 32px; background-color: #F9FAFB; border-radius: 0 0 16px 16px; border-top: 1px solid #E5E7EB; text-align: center;">
+            <td class="mobile-padding" style="padding: 24px 32px; background-color: #F9FAFB; border-radius: 0 0 16px 16px; border-top: 1px solid #E5E7EB; text-align: center;">
               <p style="margin: 0; font-size: 12px; color: #6B7280; line-height: 1.5;">
                 Este es un correo automático, por favor no respondas a este email.<br>
                 Si tenés problemas para acceder, contactanos a través de nuestros canales de atención.

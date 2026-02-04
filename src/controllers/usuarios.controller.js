@@ -86,19 +86,35 @@ const create = async (req, res, next) => {
 
 /**
  * Actualizar usuario
+ * Secretarias no pueden editar administradores. Debe haber al menos un administrador activo.
  */
 const update = async (req, res, next) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
     
-    // Verificar si el usuario existe
     const usuario = await usuarioModel.findById(id);
     if (!usuario) {
       return res.status(404).json(buildResponse(false, null, 'Usuario no encontrado'));
     }
     
-    // Si se actualiza el email, verificar que no esté en uso
+    // Secretaria no puede editar un administrador
+    if (req.user.rol === 'secretaria' && usuario.rol === 'administrador') {
+      return res.status(403).json(buildResponse(false, null, 'No puedes editar un usuario administrador'));
+    }
+    
+    // Si se cambia rol de admin a otro o se desactiva un admin, debe quedar al menos un admin activo
+    if (usuario.rol === 'administrador') {
+      const cambiarRol = updateData.rol !== undefined && updateData.rol !== 'administrador';
+      const desactivar = updateData.activo === false;
+      if (cambiarRol || desactivar) {
+        const n = await usuarioModel.countActiveAdmins();
+        if (n <= 1) {
+          return res.status(400).json(buildResponse(false, null, 'Debe haber al menos un usuario administrador activo'));
+        }
+      }
+    }
+    
     if (updateData.email && updateData.email !== usuario.email) {
       const existingUser = await usuarioModel.findByEmail(updateData.email);
       if (existingUser) {
@@ -118,22 +134,38 @@ const update = async (req, res, next) => {
 };
 
 /**
- * Eliminar usuario (soft delete)
+ * Eliminar usuario
+ * Nadie puede autoeliminarse. Secretarias no pueden eliminar administradores. Debe haber al menos un admin activo.
  */
 const deleteUser = async (req, res, next) => {
   try {
     const { id } = req.params;
+    
+    if (req.user.id === id) {
+      return res.status(403).json(buildResponse(false, null, 'No puedes eliminarte a ti mismo'));
+    }
     
     const usuario = await usuarioModel.findById(id);
     if (!usuario) {
       return res.status(404).json(buildResponse(false, null, 'Usuario no encontrado'));
     }
     
+    if (req.user.rol === 'secretaria' && usuario.rol === 'administrador') {
+      return res.status(403).json(buildResponse(false, null, 'No puedes eliminar un usuario administrador'));
+    }
+    
+    if (usuario.rol === 'administrador') {
+      const n = await usuarioModel.countActiveAdmins();
+      if (n <= 1) {
+        return res.status(400).json(buildResponse(false, null, 'Debe haber al menos un usuario administrador activo'));
+      }
+    }
+    
     await usuarioModel.delete(id);
     
-    logger.info('Usuario desactivado:', { id });
+    logger.info('Usuario eliminado:', { id });
     
-    res.json(buildResponse(true, null, 'Usuario desactivado exitosamente'));
+    res.json(buildResponse(true, null, 'Usuario eliminado exitosamente'));
   } catch (error) {
     logger.error('Error en delete usuario:', error);
     next(error);
@@ -163,10 +195,31 @@ const activate = async (req, res, next) => {
 
 /**
  * Desactivar usuario
+ * Nadie puede desactivarse a sí mismo. Secretarias no pueden desactivar administradores. Debe haber al menos un admin activo.
  */
 const deactivate = async (req, res, next) => {
   try {
     const { id } = req.params;
+    
+    if (req.user.id === id) {
+      return res.status(403).json(buildResponse(false, null, 'No puedes desactivarte a ti mismo'));
+    }
+    
+    const usuarioExistente = await usuarioModel.findById(id);
+    if (!usuarioExistente) {
+      return res.status(404).json(buildResponse(false, null, 'Usuario no encontrado'));
+    }
+    
+    if (req.user.rol === 'secretaria' && usuarioExistente.rol === 'administrador') {
+      return res.status(403).json(buildResponse(false, null, 'No puedes desactivar un usuario administrador'));
+    }
+    
+    if (usuarioExistente.rol === 'administrador') {
+      const n = await usuarioModel.countActiveAdmins();
+      if (n <= 1) {
+        return res.status(400).json(buildResponse(false, null, 'Debe haber al menos un usuario administrador activo'));
+      }
+    }
     
     const usuario = await usuarioModel.deactivate(id);
     if (!usuario) {

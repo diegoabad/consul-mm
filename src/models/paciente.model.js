@@ -36,6 +36,11 @@ const findAll = async (filters = {}) => {
       params.push(`%${filters.obra_social}%`);
     }
     
+    if (filters.ids && Array.isArray(filters.ids) && filters.ids.length > 0) {
+      sql += ` AND id = ANY($${paramIndex++})`;
+      params.push(filters.ids);
+    }
+    
     sql += ' ORDER BY fecha_creacion DESC';
     
     const result = await query(sql, params);
