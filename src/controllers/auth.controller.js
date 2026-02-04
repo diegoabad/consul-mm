@@ -92,7 +92,6 @@ const register = async (req, res, next) => {
     });
     
     logger.info('Usuario registrado:', { email, id: nuevoUsuario.id, rol });
-    
     res.status(201).json(buildResponse(true, {
       id: nuevoUsuario.id,
       email: nuevoUsuario.email,
@@ -124,8 +123,71 @@ const getProfile = async (req, res, next) => {
   }
 };
 
+/**
+ * Actualizar perfil del usuario autenticado (solo datos propios: nombre, apellido, email, telefono)
+ */
+const updateProfile = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { nombre, apellido, email, telefono } = req.body;
+
+    const usuario = await usuarioModel.findById(userId);
+    if (!usuario) {
+      return res.status(404).json(buildResponse(false, null, 'Usuario no encontrado'));
+    }
+
+    if (email && email !== usuario.email) {
+      const existingUser = await usuarioModel.findByEmail(email);
+      if (existingUser) {
+        return res.status(409).json(buildResponse(false, null, 'El email ya está en uso'));
+      }
+    }
+
+    const updateData = {};
+    if (nombre !== undefined) updateData.nombre = nombre;
+    if (apellido !== undefined) updateData.apellido = apellido;
+    if (email !== undefined) updateData.email = email;
+    if (telefono !== undefined) updateData.telefono = telefono || null;
+
+    const usuarioActualizado = await usuarioModel.update(userId, updateData);
+    logger.info('Perfil actualizado:', { id: userId });
+    res.json(buildResponse(true, usuarioActualizado, 'Perfil actualizado exitosamente'));
+  } catch (error) {
+    logger.error('Error en updateProfile:', error);
+    next(error);
+  }
+};
+
+/**
+ * Cambiar contraseña del usuario autenticado
+ */
+const updateMyPassword = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { newPassword, confirmPassword } = req.body;
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json(buildResponse(false, null, 'Las contraseñas no coinciden'));
+    }
+
+    const usuario = await usuarioModel.findById(userId);
+    if (!usuario) {
+      return res.status(404).json(buildResponse(false, null, 'Usuario no encontrado'));
+    }
+
+    await usuarioModel.updatePassword(userId, newPassword);
+    logger.info('Contraseña actualizada:', { id: userId });
+    res.json(buildResponse(true, null, 'Contraseña actualizada exitosamente'));
+  } catch (error) {
+    logger.error('Error en updateMyPassword:', error);
+    next(error);
+  }
+};
+
 module.exports = {
   login,
   register,
-  getProfile
+  getProfile,
+  updateProfile,
+  updateMyPassword
 };

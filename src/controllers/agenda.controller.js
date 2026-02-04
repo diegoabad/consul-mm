@@ -6,6 +6,7 @@
  */
 
 const agendaModel = require('../models/agenda.model');
+const excepcionAgendaModel = require('../models/excepcionAgenda.model');
 const bloqueModel = require('../models/bloque.model');
 const profesionalModel = require('../models/profesional.model');
 const logger = require('../utils/logger');
@@ -16,16 +17,17 @@ const { buildResponse } = require('../utils/helpers');
 // ============================================
 
 /**
- * Listar configuraciones de agenda con filtros
+ * Listar configuraciones de agenda con filtros (por defecto solo vigentes)
  */
 const getAllAgenda = async (req, res, next) => {
   try {
-    const { profesional_id, dia_semana, activo } = req.query;
+    const { profesional_id, dia_semana, activo, vigente } = req.query;
     const filters = {};
     
     if (profesional_id) filters.profesional_id = profesional_id;
     if (dia_semana !== undefined) filters.dia_semana = parseInt(dia_semana);
     if (activo !== undefined) filters.activo = activo === 'true';
+    if (vigente !== undefined) filters.vigente = vigente !== 'false';
     
     const agendas = await agendaModel.findAll(filters);
     
@@ -56,20 +58,20 @@ const getAgendaById = async (req, res, next) => {
 };
 
 /**
- * Obtener configuraciones de agenda de un profesional
+ * Obtener configuraciones de agenda de un profesional (por defecto solo vigentes)
  */
 const getAgendaByProfesional = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { solo_activos } = req.query;
+    const { solo_activos, vigente } = req.query;
     
-    // Verificar que el profesional existe
     const profesional = await profesionalModel.findById(id);
     if (!profesional) {
       return res.status(404).json(buildResponse(false, null, 'Profesional no encontrado'));
     }
     
-    const agendas = await agendaModel.findByProfesional(id, solo_activos === 'true');
+    const vigenteFilter = vigente !== 'false';
+    const agendas = await agendaModel.findByProfesional(id, solo_activos === 'true', vigenteFilter);
     
     res.json(buildResponse(true, agendas, 'Configuraciones de agenda del profesional obtenidas exitosamente'));
   } catch (error) {
@@ -79,11 +81,37 @@ const getAgendaByProfesional = async (req, res, next) => {
 };
 
 /**
+ * Guardar horarios de la semana: cierra el periodo vigente y crea nuevas configuraciones
+ * (permite historial: los turnos pasados siguen visibles con la agenda que tenían)
+ */
+const guardarHorariosSemana = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { horarios, fecha_desde: fechaDesde } = req.body;
+    
+    const profesional = await profesionalModel.findById(id);
+    if (!profesional) {
+      return res.status(404).json(buildResponse(false, null, 'Profesional no encontrado'));
+    }
+    if (profesional.bloqueado) {
+      return res.status(400).json(buildResponse(false, null, 'No se puede modificar la agenda de un profesional bloqueado'));
+    }
+    
+    const created = await agendaModel.guardarHorariosSemana(id, horarios, fechaDesde);
+    
+    res.status(201).json(buildResponse(true, created, 'Horarios de la semana guardados correctamente'));
+  } catch (error) {
+    logger.error('Error en guardarHorariosSemana:', error);
+    next(error);
+  }
+};
+
+/**
  * Crear nueva configuración de agenda
  */
 const createAgenda = async (req, res, next) => {
   try {
-    const { profesional_id, dia_semana, hora_inicio, hora_fin, duracion_turno_minutos, activo } = req.body;
+    const { profesional_id, dia_semana, hora_inicio, hora_fin, duracion_turno_minutos, activo, vigencia_desde } = req.body;
     
     // Verificar que el profesional existe
     const profesional = await profesionalModel.findById(profesional_id);
@@ -110,7 +138,8 @@ const createAgenda = async (req, res, next) => {
       hora_inicio,
       hora_fin,
       duracion_turno_minutos,
-      activo
+      activo,
+      ...(vigencia_desde != null && String(vigencia_desde).trim() !== '' && { vigencia_desde: String(vigencia_desde).trim().slice(0, 10) })
       });
     } catch (error) {
       // Manejar error de duplicado de PostgreSQL
@@ -287,14 +316,14 @@ const getBloqueById = async (req, res, next) => {
 };
 
 /**
- * Obtener bloques no disponibles de un profesional
+ * Obtener bloques no disponibles de un profesional (opcional: rango fecha_inicio, fecha_fin YYYY-MM-DD)
+ * Filtra por solapamiento: bloques que se solapan con [fecha_inicio, fecha_fin]
  */
 const getBloquesByProfesional = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { fecha_inicio, fecha_fin } = req.query;
     
-    // Verificar que el profesional existe
     const profesional = await profesionalModel.findById(id);
     if (!profesional) {
       return res.status(404).json(buildResponse(false, null, 'Profesional no encontrado'));
@@ -302,8 +331,8 @@ const getBloquesByProfesional = async (req, res, next) => {
     
     const bloques = await bloqueModel.findByProfesional(
       id,
-      fecha_inicio ? new Date(fecha_inicio) : null,
-      fecha_fin ? new Date(fecha_fin) : null
+      fecha_inicio || null,
+      fecha_fin || null
     );
     
     res.json(buildResponse(true, bloques, 'Bloques no disponibles del profesional obtenidos exitosamente'));
@@ -421,11 +450,149 @@ const deleteBloque = async (req, res, next) => {
   }
 };
 
+// ============================================
+// EXCEPCIONES DE AGENDA
+// ============================================
+
+/**
+ * Listar excepciones de agenda con filtros (profesional_id, fecha_desde, fecha_hasta)
+ */
+const getAllExcepciones = async (req, res, next) => {
+  try {
+    const { profesional_id, fecha_desde, fecha_hasta } = req.query;
+    const filters = {};
+    if (profesional_id) filters.profesional_id = profesional_id;
+    if (fecha_desde) filters.fecha_desde = fecha_desde;
+    if (fecha_hasta) filters.fecha_hasta = fecha_hasta;
+    const excepciones = await excepcionAgendaModel.findAll(filters);
+    res.json(buildResponse(true, excepciones, 'Excepciones de agenda obtenidas exitosamente'));
+  } catch (error) {
+    logger.error('Error en getAllExcepciones:', error);
+    next(error);
+  }
+};
+
+/**
+ * Obtener excepción por ID
+ */
+const getExcepcionById = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const excepcion = await excepcionAgendaModel.findById(id);
+    if (!excepcion) {
+      return res.status(404).json(buildResponse(false, null, 'Excepción de agenda no encontrada'));
+    }
+    res.json(buildResponse(true, excepcion, 'Excepción de agenda obtenida exitosamente'));
+  } catch (error) {
+    logger.error('Error en getExcepcionById:', error);
+    next(error);
+  }
+};
+
+/**
+ * Obtener excepciones de un profesional (opcional: rango de fechas)
+ */
+const getExcepcionesByProfesional = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { fecha_desde, fecha_hasta } = req.query;
+    const profesional = await profesionalModel.findById(id);
+    if (!profesional) {
+      return res.status(404).json(buildResponse(false, null, 'Profesional no encontrado'));
+    }
+    let excepciones;
+    if (fecha_desde && fecha_hasta) {
+      excepciones = await excepcionAgendaModel.findByProfesionalAndDateRange(id, fecha_desde, fecha_hasta);
+    } else {
+      excepciones = await excepcionAgendaModel.findAll({ profesional_id: id });
+    }
+    res.json(buildResponse(true, excepciones, 'Excepciones del profesional obtenidas exitosamente'));
+  } catch (error) {
+    logger.error('Error en getExcepcionesByProfesional:', error);
+    next(error);
+  }
+};
+
+/**
+ * Crear excepción de agenda
+ */
+const createExcepcion = async (req, res, next) => {
+  try {
+    const { profesional_id, fecha, hora_inicio, hora_fin, duracion_turno_minutos, observaciones } = req.body;
+    const profesional = await profesionalModel.findById(profesional_id);
+    if (!profesional) {
+      return res.status(404).json(buildResponse(false, null, 'Profesional no encontrado'));
+    }
+    if (profesional.bloqueado) {
+      return res.status(400).json(buildResponse(false, null, 'No se puede crear excepción de agenda para un profesional bloqueado'));
+    }
+    const excepcion = await excepcionAgendaModel.create({
+      profesional_id,
+      fecha,
+      hora_inicio,
+      hora_fin,
+      duracion_turno_minutos: duracion_turno_minutos ?? 30,
+      observaciones: observaciones || null
+    });
+    res.status(201).json(buildResponse(true, excepcion, 'Excepción de agenda creada exitosamente'));
+  } catch (error) {
+    logger.error('Error en createExcepcion:', error);
+    next(error);
+  }
+};
+
+/**
+ * Actualizar excepción de agenda
+ */
+const updateExcepcion = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const excepcionExistente = await excepcionAgendaModel.findById(id);
+    if (!excepcionExistente) {
+      return res.status(404).json(buildResponse(false, null, 'Excepción de agenda no encontrada'));
+    }
+    const updateData = {};
+    const { fecha, hora_inicio, hora_fin, duracion_turno_minutos, observaciones } = req.body;
+    if (fecha !== undefined) updateData.fecha = fecha;
+    if (hora_inicio !== undefined) updateData.hora_inicio = hora_inicio;
+    if (hora_fin !== undefined) updateData.hora_fin = hora_fin;
+    if (duracion_turno_minutos !== undefined) updateData.duracion_turno_minutos = duracion_turno_minutos;
+    if (observaciones !== undefined) updateData.observaciones = observaciones;
+    const excepcion = await excepcionAgendaModel.update(id, updateData);
+    res.json(buildResponse(true, excepcion, 'Excepción de agenda actualizada exitosamente'));
+  } catch (error) {
+    logger.error('Error en updateExcepcion:', error);
+    next(error);
+  }
+};
+
+/**
+ * Eliminar excepción de agenda
+ */
+const deleteExcepcion = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const excepcion = await excepcionAgendaModel.findById(id);
+    if (!excepcion) {
+      return res.status(404).json(buildResponse(false, null, 'Excepción de agenda no encontrada'));
+    }
+    const eliminado = await excepcionAgendaModel.delete(id);
+    if (!eliminado) {
+      return res.status(500).json(buildResponse(false, null, 'Error al eliminar la excepción de agenda'));
+    }
+    res.json(buildResponse(true, null, 'Excepción de agenda eliminada exitosamente'));
+  } catch (error) {
+    logger.error('Error en deleteExcepcion:', error);
+    next(error);
+  }
+};
+
 module.exports = {
   // Configuración de agenda
   getAllAgenda,
   getAgendaById,
   getAgendaByProfesional,
+  guardarHorariosSemana,
   createAgenda,
   updateAgenda,
   deleteAgenda,
@@ -437,5 +604,12 @@ module.exports = {
   getBloquesByProfesional,
   createBloque,
   updateBloque,
-  deleteBloque
+  deleteBloque,
+  // Excepciones de agenda
+  getAllExcepciones,
+  getExcepcionById,
+  getExcepcionesByProfesional,
+  createExcepcion,
+  updateExcepcion,
+  deleteExcepcion
 };

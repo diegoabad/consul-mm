@@ -79,6 +79,9 @@ const PERMISOS = [
   'agenda.eliminar',
   'agenda.bloques.crear',
   'agenda.bloques.eliminar',
+  'agenda.excepciones.crear',
+  'agenda.excepciones.actualizar',
+  'agenda.excepciones.eliminar',
   
   // Evoluciones
   'evoluciones.crear',
@@ -137,6 +140,9 @@ const PERMISOS_POR_ROL = {
     'agenda.leer',
     'agenda.bloques.crear',
     'agenda.bloques.eliminar',
+    'agenda.excepciones.crear',
+    'agenda.excepciones.actualizar',
+    'agenda.excepciones.eliminar',
     'evoluciones.crear',
     'evoluciones.leer',
     'evoluciones.actualizar',

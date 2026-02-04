@@ -220,6 +220,25 @@ CREATE INDEX IF NOT EXISTS idx_bloques_fecha_inicio ON bloques_no_disponibles(fe
 CREATE INDEX IF NOT EXISTS idx_bloques_fecha_fin ON bloques_no_disponibles(fecha_hora_fin);
 
 -- ============================================
+-- 10.1 TABLA: excepciones_agenda
+-- ============================================
+CREATE TABLE IF NOT EXISTS excepciones_agenda (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    profesional_id UUID NOT NULL REFERENCES profesionales(id) ON DELETE CASCADE,
+    fecha DATE NOT NULL,
+    hora_inicio TIME NOT NULL,
+    hora_fin TIME NOT NULL,
+    duracion_turno_minutos INTEGER DEFAULT 30,
+    observaciones VARCHAR(255),
+    fecha_creacion TIMESTAMP DEFAULT NOW(),
+    fecha_actualizacion TIMESTAMP DEFAULT NOW(),
+    UNIQUE(profesional_id, fecha, hora_inicio)
+);
+
+CREATE INDEX IF NOT EXISTS idx_excepciones_agenda_profesional_id ON excepciones_agenda(profesional_id);
+CREATE INDEX IF NOT EXISTS idx_excepciones_agenda_fecha ON excepciones_agenda(fecha);
+
+-- ============================================
 -- 11. TABLA: pagos_profesionales
 -- ============================================
 CREATE TABLE IF NOT EXISTS pagos_profesionales (
@@ -336,6 +355,12 @@ CREATE TRIGGER trigger_actualizar_bloques
     FOR EACH ROW
     EXECUTE FUNCTION actualizar_fecha_actualizacion();
 
+DROP TRIGGER IF EXISTS trigger_actualizar_excepciones_agenda ON excepciones_agenda;
+CREATE TRIGGER trigger_actualizar_excepciones_agenda
+    BEFORE UPDATE ON excepciones_agenda
+    FOR EACH ROW
+    EXECUTE FUNCTION actualizar_fecha_actualizacion();
+
 DROP TRIGGER IF EXISTS trigger_actualizar_pagos ON pagos_profesionales;
 CREATE TRIGGER trigger_actualizar_pagos
     BEFORE UPDATE ON pagos_profesionales
@@ -362,6 +387,7 @@ COMMENT ON TABLE archivos_paciente IS 'Archivos adjuntos de pacientes (estudios,
 COMMENT ON TABLE turnos IS 'Gestión de citas médicas';
 COMMENT ON TABLE configuracion_agenda IS 'Configuración de horarios de trabajo por profesional';
 COMMENT ON TABLE bloques_no_disponibles IS 'Bloqueos de agenda (vacaciones, ausencias, etc)';
+COMMENT ON TABLE excepciones_agenda IS 'Excepciones de agenda: días puntuales en que el profesional atiende (además o en lugar de su agenda semanal)';
 COMMENT ON TABLE pagos_profesionales IS 'Registro de pagos mensuales de profesionales';
 COMMENT ON TABLE notificaciones_email IS 'Log de notificaciones por email enviadas';
 

@@ -10,7 +10,8 @@ const { validateEmail, validatePassword } = require('../utils/validators');
 const { ROLES } = require('../utils/constants');
 
 const createUsuarioSchema = Joi.object({
-  email: validateEmail().required(),
+  email: validateEmail().required()
+    .messages({ 'any.required': 'El email es obligatorio para crear un usuario' }),
   password: validatePassword().required(),
   nombre: Joi.string().optional(),
   apellido: Joi.string().optional(),

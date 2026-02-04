@@ -6,6 +6,7 @@
  */
 
 const usuarioModel = require('../models/usuario.model');
+const emailService = require('../services/email.service');
 const logger = require('../utils/logger');
 const { buildResponse } = require('../utils/helpers');
 
@@ -72,7 +73,10 @@ const create = async (req, res, next) => {
     });
     
     logger.info('Usuario creado:', { email, id: nuevoUsuario.id, rol });
-    
+    emailService.sendWelcomeEmail(
+      { nombre: nuevoUsuario.nombre, apellido: nuevoUsuario.apellido, email: nuevoUsuario.email, password: password || '(la que elegiste)' },
+      nuevoUsuario.email
+    ).catch((err) => logger.error('Error enviando email de bienvenida:', err));
     res.status(201).json(buildResponse(true, nuevoUsuario, 'Usuario creado exitosamente'));
   } catch (error) {
     logger.error('Error en create usuario:', error);

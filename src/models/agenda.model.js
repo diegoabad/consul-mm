@@ -1,8 +1,39 @@
 /**
  * AGENDA.MODEL.JS - Modelo de configuración de agenda
- * 
+ *
  * Este modelo maneja todas las operaciones de base de datos relacionadas
  * con la configuración de horarios de trabajo de los profesionales.
+ *
+ * ---------------------------------------------------------------------------
+ * CÓMO FUNCIONA LA VIGENCIA (cuando deshabilitás un día, "corre desde ese momento")
+ * ---------------------------------------------------------------------------
+ *
+ * La tabla configuracion_agenda tiene:
+ *   - vigencia_desde (DATE): fecha desde la que rige esta configuración.
+ *   - vigencia_hasta (DATE, nullable): fecha hasta la que rigió; NULL = sigue vigente.
+ *
+ * Cuando guardás "horarios de la semana" (por ejemplo pasás de Lu–Vi a Ma–Vi, quitando el lunes):
+ *
+ *   1. closeVigenciaForProfesional(profesionalId)
+ *      - A todas las filas de ese profesional que tienen vigencia_hasta IS NULL
+ *        les pone vigencia_hasta = CURRENT_DATE (hoy).
+ *      - Es decir: "la agenda que estaba vigente hasta ayer, termina hoy".
+ *
+ *   2. Se crean NUEVAS filas solo para los días que seguís teniendo habilitados
+ *      (ej. Ma, Mi, Ju, Vi). Esas filas nuevas tienen:
+ *      - vigencia_desde = CURRENT_DATE (por defecto de la tabla)
+ *      - vigencia_hasta = NULL
+ *      - Es decir: "desde hoy rige esta nueva agenda".
+ *
+ * Resultado:
+ *   - Para fechas PASADAS: se usa la agenda "vieja" (Lu–Vi) porque esas filas
+ *     tienen vigencia_hasta = hoy, y para una fecha pasada esa fecha <= vigencia_hasta.
+ *   - Para HOY y FUTURO: solo existen las filas nuevas (Ma–Vi) con vigencia_hasta NULL,
+ *     así que los lunes ya no tienen configuración vigente y quedan deshabilitados.
+ *
+ * Al listar "agenda vigente" (por defecto): solo se devuelven filas con
+ * vigencia_hasta IS NULL OR vigencia_hasta > CURRENT_DATE, para no mezclar
+ * la agenda cerrada hoy con la nueva. Para ver historial se usa vigente=false.
  */
 
 const { query } = require('../config/database');
@@ -10,7 +41,7 @@ const logger = require('../utils/logger');
 
 /**
  * Buscar todas las configuraciones de agenda con filtros opcionales
- * @param {Object} filters - Filtros: profesional_id, dia_semana, activo
+ * @param {Object} filters - Filtros: profesional_id, dia_semana, activo, vigente (default true = solo vigentes)
  * @returns {Promise<Array>} Lista de configuraciones de agenda
  */
 const findAll = async (filters = {}) => {
@@ -19,6 +50,7 @@ const findAll = async (filters = {}) => {
       SELECT 
         ca.id, ca.profesional_id, ca.dia_semana, ca.hora_inicio, ca.hora_fin,
         ca.duracion_turno_minutos, ca.activo, ca.fecha_creacion, ca.fecha_actualizacion,
+        ca.vigencia_desde, ca.vigencia_hasta,
         p.matricula, p.especialidad,
         u.nombre as profesional_nombre, u.apellido as profesional_apellido
       FROM configuracion_agenda ca
@@ -44,6 +76,11 @@ const findAll = async (filters = {}) => {
       params.push(filters.activo);
     }
     
+    // Vigente = sin cierre o vigencia_hasta después de hoy (excluir cerradas hoy para que no compitan con las nuevas)
+    if (filters.vigente !== false) {
+      sql += ` AND (ca.vigencia_hasta IS NULL OR ca.vigencia_hasta > CURRENT_DATE)`;
+    }
+    
     sql += ' ORDER BY ca.profesional_id, ca.dia_semana, ca.hora_inicio';
     
     const result = await query(sql, params);
@@ -65,6 +102,7 @@ const findById = async (id) => {
       `SELECT 
         ca.id, ca.profesional_id, ca.dia_semana, ca.hora_inicio, ca.hora_fin,
         ca.duracion_turno_minutos, ca.activo, ca.fecha_creacion, ca.fecha_actualizacion,
+        ca.vigencia_desde, ca.vigencia_hasta,
         p.matricula, p.especialidad,
         u.nombre as profesional_nombre, u.apellido as profesional_apellido
       FROM configuracion_agenda ca
@@ -84,14 +122,16 @@ const findById = async (id) => {
  * Buscar configuraciones de agenda por profesional_id
  * @param {string} profesionalId - UUID del profesional
  * @param {boolean} soloActivos - Si true, solo retorna configuraciones activas
+ * @param {boolean} vigente - Si true (default), solo configuraciones vigentes (vigencia_hasta IS NULL o > hoy; excluye cerradas hoy)
  * @returns {Promise<Array>} Lista de configuraciones de agenda del profesional
  */
-const findByProfesional = async (profesionalId, soloActivos = false) => {
+const findByProfesional = async (profesionalId, soloActivos = false, vigente = true) => {
   try {
     let sql = `
       SELECT 
         ca.id, ca.profesional_id, ca.dia_semana, ca.hora_inicio, ca.hora_fin,
-        ca.duracion_turno_minutos, ca.activo, ca.fecha_creacion, ca.fecha_actualizacion
+        ca.duracion_turno_minutos, ca.activo, ca.fecha_creacion, ca.fecha_actualizacion,
+        ca.vigencia_desde, ca.vigencia_hasta
       FROM configuracion_agenda ca
       WHERE ca.profesional_id = $1
     `;
@@ -102,12 +142,50 @@ const findByProfesional = async (profesionalId, soloActivos = false) => {
       params.push(true);
     }
     
+    if (vigente) {
+      sql += ' AND (ca.vigencia_hasta IS NULL OR ca.vigencia_hasta > CURRENT_DATE)';
+    }
+    
     sql += ' ORDER BY ca.dia_semana, ca.hora_inicio';
     
     const result = await query(sql, params);
     return result.rows;
   } catch (error) {
     logger.error('Error en findByProfesional configuracion_agenda:', error);
+    throw error;
+  }
+};
+
+/** Convierte hora "HH:mm:ss" o "HH:mm" a minutos desde medianoche */
+function timeToMinutes(timeStr) {
+  if (!timeStr || typeof timeStr !== 'string') return 0;
+  const part = timeStr.trim().substring(0, 5);
+  const [h, m] = part.split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+/**
+ * Verificar si el profesional tiene agenda vigente para esa fecha/hora (día de semana + rango horario).
+ * Usado para no permitir crear turnos en días u horarios que ya no atiende (ej. desactivó los lunes).
+ * La hora se interpreta en hora local del servidor (asumir misma zona que el consultorio).
+ * @param {string} profesionalId - UUID del profesional
+ * @param {Date} fechaHora - Fecha y hora de inicio del turno
+ * @returns {Promise<boolean>} true si hay al menos una config vigente para ese día y esa hora dentro del rango
+ */
+const vigentConfigCoversDateTime = async (profesionalId, fechaHora) => {
+  try {
+    const configs = await findByProfesional(profesionalId, true, true);
+    const diaSemana = fechaHora.getDay();
+    const minutos = fechaHora.getHours() * 60 + fechaHora.getMinutes();
+    for (const c of configs) {
+      if (c.dia_semana !== diaSemana) continue;
+      const inicioMin = timeToMinutes(c.hora_inicio);
+      const finMin = timeToMinutes(c.hora_fin);
+      if (minutos >= inicioMin && minutos < finMin) return true;
+    }
+    return false;
+  } catch (error) {
+    logger.error('Error en vigentConfigCoversDateTime:', error);
     throw error;
   }
 };
@@ -155,17 +233,27 @@ const create = async (agendaData) => {
       hora_inicio,
       hora_fin,
       duracion_turno_minutos = 30,
-      activo = true
+      activo = true,
+      vigencia_desde: vigenciaDesdeParam
     } = agendaData;
-    
+
+    const hasVigenciaDesde = vigenciaDesdeParam != null && String(vigenciaDesdeParam).trim() !== '';
+    const cols = ['profesional_id', 'dia_semana', 'hora_inicio', 'hora_fin', 'duracion_turno_minutos', 'activo'];
+    const placeholders = [1, 2, 3, 4, 5, 6];
+    const values = [profesional_id, dia_semana, hora_inicio, hora_fin, duracion_turno_minutos, activo];
+    if (hasVigenciaDesde) {
+      cols.push('vigencia_desde');
+      placeholders.push(values.length + 1);
+      values.push(String(vigenciaDesdeParam).trim().slice(0, 10));
+    }
+
     const result = await query(
-      `INSERT INTO configuracion_agenda 
-        (profesional_id, dia_semana, hora_inicio, hora_fin, duracion_turno_minutos, activo)
-      VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO configuracion_agenda (${cols.join(', ')})
+      VALUES (${placeholders.map((p) => `$${p}`).join(', ')})
       RETURNING *`,
-      [profesional_id, dia_semana, hora_inicio, hora_fin, duracion_turno_minutos, activo]
+      values
     );
-    
+
     return result.rows[0];
   } catch (error) {
     logger.error('Error en create configuracion_agenda:', error);
@@ -285,14 +373,70 @@ const deactivate = async (id) => {
   }
 };
 
+/**
+ * Cerrar periodo vigente de un profesional (set vigencia_hasta = hoy en todas las config vigentes)
+ * @param {string} profesionalId - UUID del profesional
+ * @returns {Promise<number>} Cantidad de filas actualizadas
+ */
+const closeVigenciaForProfesional = async (profesionalId) => {
+  try {
+    const result = await query(
+      `UPDATE configuracion_agenda 
+       SET vigencia_hasta = CURRENT_DATE 
+       WHERE profesional_id = $1 AND vigencia_hasta IS NULL
+       RETURNING id`,
+      [profesionalId]
+    );
+    return result.rows.length;
+  } catch (error) {
+    logger.error('Error en closeVigenciaForProfesional:', error);
+    throw error;
+  }
+};
+
+/**
+ * Guardar horarios de la semana: cierra periodo vigente y crea nuevas configuraciones
+ * @param {string} profesionalId - UUID del profesional
+ * @param {Array<{dia_semana: number, hora_inicio: string, hora_fin: string}>} horarios - Lista de días con horario (solo los que atiende)
+ * @param {string} [fechaDesde] - YYYY-MM-DD desde la que rige la nueva agenda (ej. "hoy" del usuario); si no se pasa, se usa CURRENT_DATE del servidor
+ * @returns {Promise<Array>} Configuraciones creadas
+ */
+const guardarHorariosSemana = async (profesionalId, horarios, fechaDesde = null) => {
+  try {
+    await closeVigenciaForProfesional(profesionalId);
+    const normalizeTime = (t) => (t && t.length === 5 ? t + ':00' : t);
+    const vigenciaDesde = (fechaDesde != null && String(fechaDesde).trim() !== '') ? String(fechaDesde).trim().slice(0, 10) : null;
+    const created = [];
+    for (const h of horarios) {
+      const row = await create({
+        profesional_id: profesionalId,
+        dia_semana: h.dia_semana,
+        hora_inicio: normalizeTime(h.hora_inicio),
+        hora_fin: normalizeTime(h.hora_fin),
+        duracion_turno_minutos: 30,
+        activo: true,
+        ...(vigenciaDesde && { vigencia_desde: vigenciaDesde }),
+      });
+      created.push(row);
+    }
+    return created;
+  } catch (error) {
+    logger.error('Error en guardarHorariosSemana:', error);
+    throw error;
+  }
+};
+
 module.exports = {
   findAll,
   findById,
   findByProfesional,
   checkDuplicate,
+  vigentConfigCoversDateTime,
   create,
   update,
   delete: deleteAgenda,
   activate,
-  deactivate
+  deactivate,
+  closeVigenciaForProfesional,
+  guardarHorariosSemana,
 };

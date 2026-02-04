@@ -7,6 +7,10 @@
 const nodemailer = require('nodemailer');
 const logger = require('../utils/logger');
 
+// Aceptar certificados no verificados (evita "self-signed certificate in certificate chain").
+// Si en producción querés verificación estricta, agregá en .env: EMAIL_TLS_REJECT_UNAUTHORIZED=true
+const rejectUnauthorized = process.env.EMAIL_TLS_REJECT_UNAUTHORIZED === 'true';
+
 // Configuración del transporter desde variables de entorno
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST || 'smtp.gmail.com',
@@ -15,7 +19,12 @@ const transporter = nodemailer.createTransport({
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASSWORD
-  }
+  },
+  tls: {
+    rejectUnauthorized
+  },
+  connectionTimeout: 10000,
+  greetingTimeout: 10000
 });
 
 // Opciones por defecto para emails

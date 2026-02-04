@@ -42,7 +42,9 @@ const createAgendaSchema = Joi.object({
       'number.min': 'La duracion_turno_minutos debe ser al menos 5 minutos',
       'number.max': 'La duracion_turno_minutos no puede exceder 480 minutos (8 horas)'
     }),
-  activo: Joi.boolean().default(true)
+  activo: Joi.boolean().default(true),
+  vigencia_desde: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).optional()
+    .messages({ 'string.pattern.base': 'vigencia_desde debe ser YYYY-MM-DD' })
 }).custom((value, helpers) => {
   // Validar que hora_fin sea posterior a hora_inicio
   if (value.hora_inicio && value.hora_fin) {
@@ -119,7 +121,34 @@ const agendaQuerySchema = Joi.object({
     .messages({
       'string.pattern.base': 'El dia_semana debe ser un número entre 0 y 6'
     }),
-  activo: Joi.string().valid('true', 'false').optional()
+  activo: Joi.string().valid('true', 'false').optional(),
+  vigente: Joi.string().valid('true', 'false').optional()
+});
+
+// Body para guardar horarios de la semana (cierra periodo vigente y crea nuevos)
+const horaPattern = /^([0-1][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/;
+const guardarHorariosSemanaSchema = Joi.object({
+  horarios: Joi.array()
+    .items(
+      Joi.object({
+        dia_semana: Joi.number().integer().min(0).max(6).required(),
+        hora_inicio: Joi.string().pattern(horaPattern).required(),
+        hora_fin: Joi.string().pattern(horaPattern).required()
+      }).custom((value, helpers) => {
+        const toMin = (t) => {
+          const parts = t.split(':').map(Number);
+          return (parts[0] || 0) * 60 + (parts[1] || 0);
+        };
+        if (toMin(value.hora_fin) <= toMin(value.hora_inicio)) {
+          return helpers.error('custom.hora_fin', { message: 'hora_fin debe ser posterior a hora_inicio' });
+        }
+        return value;
+      })
+    )
+    .required()
+    .min(0),
+  fecha_desde: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).optional()
+    .messages({ 'string.pattern.base': 'fecha_desde debe ser YYYY-MM-DD' })
 });
 
 // ============================================
@@ -191,15 +220,63 @@ const bloqueQuerySchema = Joi.object({
   fecha_fin: Joi.date().iso().optional()
 });
 
+// ============================================
+// EXCEPCIONES DE AGENDA
+// ============================================
+
+const createExcepcionSchema = Joi.object({
+  profesional_id: Joi.string().uuid().required(),
+  fecha: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).required(),
+  hora_inicio: Joi.string().pattern(/^([0-1][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/).required(),
+  hora_fin: Joi.string().pattern(/^([0-1][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/).required(),
+  duracion_turno_minutos: Joi.number().integer().min(5).max(480).default(30),
+  observaciones: Joi.string().max(255).allow(null, '').optional()
+}).custom((value, helpers) => {
+  if (value.hora_inicio && value.hora_fin) {
+    const toMin = (h) => {
+      const parts = h.split(':');
+      return (parseInt(parts[0], 10) || 0) * 60 + (parseInt(parts[1], 10) || 0);
+    };
+    if (toMin(value.hora_fin) <= toMin(value.hora_inicio)) {
+      return helpers.error('custom.hora_fin', { message: 'La hora_fin debe ser posterior a hora_inicio' });
+    }
+  }
+  return value;
+}).messages({ 'custom.hora_fin': 'La hora_fin debe ser posterior a hora_inicio' });
+
+const updateExcepcionSchema = Joi.object({
+  fecha: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  hora_inicio: Joi.string().pattern(/^([0-1][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/).optional(),
+  hora_fin: Joi.string().pattern(/^([0-1][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/).optional(),
+  duracion_turno_minutos: Joi.number().integer().min(5).max(480).optional(),
+  observaciones: Joi.string().max(255).allow(null, '').optional()
+});
+
+const excepcionParamsSchema = Joi.object({
+  id: Joi.string().uuid().required()
+});
+
+const excepcionQuerySchema = Joi.object({
+  profesional_id: Joi.string().uuid().optional(),
+  fecha_desde: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  fecha_hasta: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).optional()
+});
+
 module.exports = {
   // Configuración de agenda
   createAgendaSchema,
   updateAgendaSchema,
   agendaParamsSchema,
   agendaQuerySchema,
+  guardarHorariosSemanaSchema,
   // Bloques no disponibles
   createBloqueSchema,
   updateBloqueSchema,
   bloqueParamsSchema,
-  bloqueQuerySchema
+  bloqueQuerySchema,
+  // Excepciones de agenda
+  createExcepcionSchema,
+  updateExcepcionSchema,
+  excepcionParamsSchema,
+  excepcionQuerySchema
 };

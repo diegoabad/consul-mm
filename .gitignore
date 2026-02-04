@@ -30,9 +30,7 @@ backup_local.sql
 coverage/
 
 # Credenciales o docs con datos sensibles
-CREDENCIALES_USUARIOS.md
-
-# Sistema y editores
+CREDENCIALES_USUARIOS.md# Sistema y editores
 .DS_Store
 Thumbs.db
 *.swp

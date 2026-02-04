@@ -9,6 +9,8 @@ const turnoModel = require('../models/turno.model');
 const profesionalModel = require('../models/profesional.model');
 const pacienteModel = require('../models/paciente.model');
 const bloqueModel = require('../models/bloque.model');
+const agendaModel = require('../models/agenda.model');
+const emailService = require('../services/email.service');
 const logger = require('../utils/logger');
 const { buildResponse } = require('../utils/helpers');
 const { ESTADOS_TURNO } = require('../utils/constants');
@@ -157,6 +159,13 @@ const create = async (req, res, next) => {
       return res.status(400).json(buildResponse(false, null, 'No se pueden crear turnos para pacientes inactivos'));
     }
     
+    // Verificar que el profesional atiende ese día y horario (agenda vigente: no permitir turnos en días desactivados)
+    const fechaHoraInicio = new Date(fecha_hora_inicio);
+    const cubiertoPorAgenda = await agendaModel.vigentConfigCoversDateTime(profesional_id, fechaHoraInicio);
+    if (!cubiertoPorAgenda) {
+      return res.status(400).json(buildResponse(false, null, 'No se pueden crear turnos en días u horarios en que el profesional no atiende'));
+    }
+    
     // Verificar disponibilidad (solapamiento con otros turnos)
     const disponible = await turnoModel.checkAvailability(
       profesional_id,
@@ -191,7 +200,11 @@ const create = async (req, res, next) => {
     
     // Obtener el turno completo con datos relacionados
     const turnoCompleto = await turnoModel.findById(nuevoTurno.id);
-    
+    // Envío de email en segundo plano (no bloquea la respuesta)
+    if (turnoCompleto?.paciente_email) {
+      emailService.sendTurnoConfirmation(turnoCompleto, turnoCompleto.paciente_email)
+        .catch((err) => logger.error('Error enviando email de turno asignado:', err));
+    }
     res.status(201).json(buildResponse(true, turnoCompleto, 'Turno creado exitosamente'));
   } catch (error) {
     logger.error('Error en create turno:', error);
@@ -213,10 +226,15 @@ const update = async (req, res, next) => {
       return res.status(404).json(buildResponse(false, null, 'Turno no encontrado'));
     }
     
-    // Si se cambia la fecha/hora, verificar disponibilidad
+    // Si se cambia la fecha/hora, verificar agenda vigente y disponibilidad
     if (updateData.fecha_hora_inicio || updateData.fecha_hora_fin) {
       const fechaHoraInicio = updateData.fecha_hora_inicio ? new Date(updateData.fecha_hora_inicio) : new Date(turno.fecha_hora_inicio);
       const fechaHoraFin = updateData.fecha_hora_fin ? new Date(updateData.fecha_hora_fin) : new Date(turno.fecha_hora_fin);
+      
+      const cubiertoPorAgenda = await agendaModel.vigentConfigCoversDateTime(turno.profesional_id, fechaHoraInicio);
+      if (!cubiertoPorAgenda) {
+        return res.status(400).json(buildResponse(false, null, 'No se pueden asignar turnos en días u horarios en que el profesional no atiende'));
+      }
       
       const disponible = await turnoModel.checkAvailability(
         turno.profesional_id,
@@ -272,12 +290,8 @@ const cancel = async (req, res, next) => {
     }
     
     const turnoCancelado = await turnoModel.cancel(id, razon_cancelacion || null, canceladoPor);
-    
     logger.info('Turno cancelado:', { id, razon_cancelacion, canceladoPor });
-    
-    // Obtener el turno completo con datos relacionados
     const turnoCompleto = await turnoModel.findById(id);
-    
     res.json(buildResponse(true, turnoCompleto, 'Turno cancelado exitosamente'));
   } catch (error) {
     logger.error('Error en cancel turno:', error);

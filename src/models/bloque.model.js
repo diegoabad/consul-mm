@@ -82,9 +82,11 @@ const findById = async (id) => {
 
 /**
  * Buscar bloques no disponibles por profesional_id
+ * Si se pasan fecha_inicio y fecha_fin (YYYY-MM-DD), filtra por solapamiento:
+ * bloques que se solapan con [fecha_inicio, fecha_fin].
  * @param {string} profesionalId - UUID del profesional
- * @param {Date} fechaInicio - Fecha de inicio para filtrar (opcional)
- * @param {Date} fechaFin - Fecha de fin para filtrar (opcional)
+ * @param {string|Date|null} fechaInicio - Fecha inicio rango (YYYY-MM-DD o Date)
+ * @param {string|Date|null} fechaFin - Fecha fin rango (YYYY-MM-DD o Date)
  * @returns {Promise<Array>} Lista de bloques del profesional
  */
 const findByProfesional = async (profesionalId, fechaInicio = null, fechaFin = null) => {
@@ -98,19 +100,14 @@ const findByProfesional = async (profesionalId, fechaInicio = null, fechaFin = n
     `;
     const params = [profesionalId];
     let paramIndex = 2;
-    
-    if (fechaInicio) {
-      sql += ` AND b.fecha_hora_inicio >= $${paramIndex++}`;
-      params.push(fechaInicio);
+    if (fechaInicio && fechaFin) {
+      const desde = typeof fechaInicio === 'string' ? fechaInicio : fechaInicio.toISOString().slice(0, 10);
+      const hasta = typeof fechaFin === 'string' ? fechaFin : fechaFin.toISOString().slice(0, 10);
+      sql += ` AND (b.fecha_hora_inicio::date <= $${paramIndex}::date AND b.fecha_hora_fin::date >= $${paramIndex + 1}::date)`;
+      params.push(hasta, desde);
+      paramIndex += 2;
     }
-    
-    if (fechaFin) {
-      sql += ` AND b.fecha_hora_fin <= $${paramIndex++}`;
-      params.push(fechaFin);
-    }
-    
     sql += ' ORDER BY b.fecha_hora_inicio DESC';
-    
     const result = await query(sql, params);
     return result.rows;
   } catch (error) {

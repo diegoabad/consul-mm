@@ -21,6 +21,7 @@ const permisoModel = require('./permiso.model');
 const pacienteModel = require('./paciente.model');
 const turnoModel = require('./turno.model');
 const agendaModel = require('./agenda.model');
+const excepcionAgendaModel = require('./excepcionAgenda.model');
 const bloqueModel = require('./bloque.model');
 const evolucionModel = require('./evolucion.model');
 const archivoModel = require('./archivo.model');
@@ -35,6 +36,7 @@ module.exports = {
   pacienteModel,
   turnoModel,
   agendaModel,
+  excepcionAgendaModel,
   bloqueModel,
   evolucionModel,
   archivoModel,

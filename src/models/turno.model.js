@@ -40,7 +40,7 @@ const findAll = async (filters = {}) => {
         t.fecha_creacion, t.fecha_actualizacion,
         p.matricula, p.especialidad,
         u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido, u_prof.email as profesional_email,
-        pac.nombre as paciente_nombre, pac.apellido as paciente_apellido, pac.dni as paciente_dni, pac.telefono as paciente_telefono
+        pac.nombre as paciente_nombre, pac.apellido as paciente_apellido, pac.dni as paciente_dni, pac.telefono as paciente_telefono, pac.email as paciente_email
       FROM turnos t
       INNER JOIN profesionales p ON t.profesional_id = p.id
       INNER JOIN usuarios u_prof ON p.usuario_id = u_prof.id
@@ -104,7 +104,7 @@ const findById = async (id) => {
         t.fecha_creacion, t.fecha_actualizacion,
         p.matricula, p.especialidad,
         u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido, u_prof.email as profesional_email,
-        pac.nombre as paciente_nombre, pac.apellido as paciente_apellido, pac.dni as paciente_dni, pac.telefono as paciente_telefono
+        pac.nombre as paciente_nombre, pac.apellido as paciente_apellido, pac.dni as paciente_dni, pac.telefono as paciente_telefono, pac.email as paciente_email
       FROM turnos t
       INNER JOIN profesionales p ON t.profesional_id = p.id
       INNER JOIN usuarios u_prof ON p.usuario_id = u_prof.id

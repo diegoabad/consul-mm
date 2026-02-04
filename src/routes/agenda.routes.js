@@ -16,10 +16,15 @@ const {
   updateAgendaSchema,
   agendaParamsSchema,
   agendaQuerySchema,
+  guardarHorariosSemanaSchema,
   createBloqueSchema,
   updateBloqueSchema,
   bloqueParamsSchema,
-  bloqueQuerySchema
+  bloqueQuerySchema,
+  createExcepcionSchema,
+  updateExcepcionSchema,
+  excepcionParamsSchema,
+  excepcionQuerySchema
 } = require('../validators/agenda.validator');
 
 // ============================================
@@ -43,6 +48,16 @@ router.get(
   validateParams(agendaParamsSchema),
   validateQuery(agendaQuerySchema),
   agendaController.getAgendaByProfesional
+);
+
+// PUT /profesional/:id/horarios-semana - Guardar horarios de la semana (cierra periodo vigente y crea nuevos)
+router.put(
+  '/profesional/:id/horarios-semana',
+  authenticate,
+  requirePermission('agenda.crear'),
+  validateParams(agendaParamsSchema),
+  validateBody(guardarHorariosSemanaSchema),
+  agendaController.guardarHorariosSemana
 );
 
 // ============================================
@@ -103,6 +118,66 @@ router.delete(
   requirePermission('agenda.bloques.eliminar'),
   validateParams(bloqueParamsSchema),
   agendaController.deleteBloque
+);
+
+// ============================================
+// RUTAS PARA EXCEPCIONES DE AGENDA (ANTES de /:id)
+// ============================================
+
+// GET /excepciones - Listar excepciones con filtros
+router.get(
+  '/excepciones',
+  authenticate,
+  requirePermission('agenda.leer'),
+  validateQuery(excepcionQuerySchema),
+  agendaController.getAllExcepciones
+);
+
+// GET /excepciones/profesional/:id - Excepciones de un profesional
+router.get(
+  '/excepciones/profesional/:id',
+  authenticate,
+  requirePermission('agenda.leer'),
+  validateParams(excepcionParamsSchema),
+  validateQuery(excepcionQuerySchema),
+  agendaController.getExcepcionesByProfesional
+);
+
+// GET /excepciones/:id - Obtener excepción por ID
+router.get(
+  '/excepciones/:id',
+  authenticate,
+  requirePermission('agenda.leer'),
+  validateParams(excepcionParamsSchema),
+  agendaController.getExcepcionById
+);
+
+// POST /excepciones - Crear excepción
+router.post(
+  '/excepciones',
+  authenticate,
+  requirePermission('agenda.excepciones.crear'),
+  validateBody(createExcepcionSchema),
+  agendaController.createExcepcion
+);
+
+// PUT /excepciones/:id - Actualizar excepción
+router.put(
+  '/excepciones/:id',
+  authenticate,
+  requirePermission('agenda.excepciones.actualizar'),
+  validateParams(excepcionParamsSchema),
+  validateBody(updateExcepcionSchema),
+  agendaController.updateExcepcion
+);
+
+// DELETE /excepciones/:id - Eliminar excepción
+router.delete(
+  '/excepciones/:id',
+  authenticate,
+  requirePermission('agenda.excepciones.eliminar'),
+  validateParams(excepcionParamsSchema),
+  agendaController.deleteExcepcion
 );
 
 // GET /:id - Obtener configuración de agenda por ID (DESPUÉS de /bloques)
