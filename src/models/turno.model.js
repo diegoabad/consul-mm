@@ -38,7 +38,7 @@ const findAll = async (filters = {}) => {
         t.id, t.profesional_id, t.paciente_id, t.fecha_hora_inicio::text as fecha_hora_inicio, t.fecha_hora_fin::text as fecha_hora_fin,
         t.estado, t.sobreturno, t.motivo, t.cancelado_por, t.razon_cancelacion,
         t.fecha_creacion, t.fecha_actualizacion,
-        p.matricula, p.especialidad,
+        p.matricula, p.especialidad as profesional_especialidad,
         u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido, u_prof.email as profesional_email,
         pac.nombre as paciente_nombre, pac.apellido as paciente_apellido, pac.dni as paciente_dni, pac.telefono as paciente_telefono, pac.email as paciente_email
       FROM turnos t
@@ -102,7 +102,7 @@ const findById = async (id) => {
         t.id, t.profesional_id, t.paciente_id, t.fecha_hora_inicio::text as fecha_hora_inicio, t.fecha_hora_fin::text as fecha_hora_fin,
         t.estado, t.sobreturno, t.motivo, t.cancelado_por, t.razon_cancelacion,
         t.fecha_creacion, t.fecha_actualizacion,
-        p.matricula, p.especialidad,
+        p.matricula, p.especialidad as profesional_especialidad,
         u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido, u_prof.email as profesional_email,
         pac.nombre as paciente_nombre, pac.apellido as paciente_apellido, pac.dni as paciente_dni, pac.telefono as paciente_telefono, pac.email as paciente_email
       FROM turnos t
@@ -184,7 +184,7 @@ const findByPaciente = async (pacienteId, fechaInicio = null, fechaFin = null) =
         t.id, t.profesional_id, t.paciente_id, t.fecha_hora_inicio::text as fecha_hora_inicio, t.fecha_hora_fin::text as fecha_hora_fin,
         t.estado, t.sobreturno, t.motivo, t.cancelado_por, t.razon_cancelacion,
         t.fecha_creacion, t.fecha_actualizacion,
-        p.matricula, p.especialidad,
+        p.matricula, p.especialidad as profesional_especialidad,
         u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido
       FROM turnos t
       INNER JOIN profesionales p ON t.profesional_id = p.id

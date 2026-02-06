@@ -14,6 +14,7 @@
     "migrate:especialidades-obras": "node scripts/run-migrations-especialidades-obras.js",
     "migrate:006": "node scripts/run-migration-006.js",
     "migrate:008": "node scripts/run-migration-008.js",
+    "migrate:016": "node scripts/run-migration-016.js",
     "test-connection": "node scripts/test-connection.js",
     "setup-users": "node test/crear-usuarios-prueba.js"
   },

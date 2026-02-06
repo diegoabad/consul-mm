@@ -17,15 +17,17 @@ const findAll = async (filters = {}) => {
   try {
     let sql = `
       SELECT 
-        a.id, a.paciente_id, a.profesional_id, a.nombre_archivo, a.tipo_archivo,
+        a.id, a.paciente_id, a.profesional_id, a.usuario_id, a.nombre_archivo, a.tipo_archivo,
         a.url_archivo, a.tamanio_bytes, a.descripcion, a.fecha_subida, a.fecha_actualizacion,
         p.nombre as paciente_nombre, p.apellido as paciente_apellido, p.dni as paciente_dni,
         prof.matricula, prof.especialidad,
-        u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido
+        u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido,
+        u_subido.nombre as usuario_subido_nombre, u_subido.apellido as usuario_subido_apellido
       FROM archivos_paciente a
       INNER JOIN pacientes p ON a.paciente_id = p.id
-      INNER JOIN profesionales prof ON a.profesional_id = prof.id
-      INNER JOIN usuarios u_prof ON prof.usuario_id = u_prof.id
+      INNER JOIN usuarios u_subido ON a.usuario_id = u_subido.id
+      LEFT JOIN profesionales prof ON a.profesional_id = prof.id
+      LEFT JOIN usuarios u_prof ON prof.usuario_id = u_prof.id
       WHERE 1=1
     `;
     const params = [];
@@ -60,15 +62,17 @@ const findById = async (id) => {
   try {
     const result = await query(
       `SELECT 
-        a.id, a.paciente_id, a.profesional_id, a.nombre_archivo, a.tipo_archivo,
+        a.id, a.paciente_id, a.profesional_id, a.usuario_id, a.nombre_archivo, a.tipo_archivo,
         a.url_archivo, a.tamanio_bytes, a.descripcion, a.fecha_subida, a.fecha_actualizacion,
         p.nombre as paciente_nombre, p.apellido as paciente_apellido, p.dni as paciente_dni,
         prof.matricula, prof.especialidad,
-        u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido
+        u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido,
+        u_subido.nombre as usuario_subido_nombre, u_subido.apellido as usuario_subido_apellido
       FROM archivos_paciente a
       INNER JOIN pacientes p ON a.paciente_id = p.id
-      INNER JOIN profesionales prof ON a.profesional_id = prof.id
-      INNER JOIN usuarios u_prof ON prof.usuario_id = u_prof.id
+      INNER JOIN usuarios u_subido ON a.usuario_id = u_subido.id
+      LEFT JOIN profesionales prof ON a.profesional_id = prof.id
+      LEFT JOIN usuarios u_prof ON prof.usuario_id = u_prof.id
       WHERE a.id = $1`,
       [id]
     );
@@ -88,13 +92,15 @@ const findByPaciente = async (pacienteId) => {
   try {
     const result = await query(
       `SELECT 
-        a.id, a.paciente_id, a.profesional_id, a.nombre_archivo, a.tipo_archivo,
+        a.id, a.paciente_id, a.profesional_id, a.usuario_id, a.nombre_archivo, a.tipo_archivo,
         a.url_archivo, a.tamanio_bytes, a.descripcion, a.fecha_subida, a.fecha_actualizacion,
         prof.matricula, prof.especialidad,
-        u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido
+        u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido,
+        u_subido.nombre as usuario_subido_nombre, u_subido.apellido as usuario_subido_apellido
       FROM archivos_paciente a
-      INNER JOIN profesionales prof ON a.profesional_id = prof.id
-      INNER JOIN usuarios u_prof ON prof.usuario_id = u_prof.id
+      INNER JOIN usuarios u_subido ON a.usuario_id = u_subido.id
+      LEFT JOIN profesionales prof ON a.profesional_id = prof.id
+      LEFT JOIN usuarios u_prof ON prof.usuario_id = u_prof.id
       WHERE a.paciente_id = $1
       ORDER BY a.fecha_subida DESC`,
       [pacienteId]
@@ -140,7 +146,8 @@ const create = async (archivoData) => {
   try {
     const {
       paciente_id,
-      profesional_id,
+      usuario_id,
+      profesional_id = null,
       nombre_archivo,
       tipo_archivo = null,
       url_archivo,
@@ -150,10 +157,10 @@ const create = async (archivoData) => {
     
     const result = await query(
       `INSERT INTO archivos_paciente 
-        (paciente_id, profesional_id, nombre_archivo, tipo_archivo, url_archivo, tamanio_bytes, descripcion)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+        (paciente_id, usuario_id, profesional_id, nombre_archivo, tipo_archivo, url_archivo, tamanio_bytes, descripcion)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING *`,
-      [paciente_id, profesional_id, nombre_archivo, tipo_archivo, url_archivo, tamanio_bytes, descripcion]
+      [paciente_id, usuario_id, profesional_id, nombre_archivo, tipo_archivo, url_archivo, tamanio_bytes, descripcion]
     );
     
     return result.rows[0];

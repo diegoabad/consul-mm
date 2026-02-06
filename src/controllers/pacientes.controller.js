@@ -394,6 +394,50 @@ const removeAsignacion = async (req, res, next) => {
   }
 };
 
+/**
+ * Reemplazar todas las asignaciones del paciente en una sola operación
+ * Body: { profesional_ids: string[] }
+ */
+const setAsignaciones = async (req, res, next) => {
+  try {
+    const { id: pacienteId } = req.params;
+    let { profesional_ids: profesionalIds } = req.body;
+    if (!Array.isArray(profesionalIds)) {
+      return res.status(400).json(buildResponse(false, null, 'profesional_ids debe ser un arreglo'));
+    }
+    profesionalIds = profesionalIds.map((id) => (typeof id === 'string' ? id.trim() : id)).filter(Boolean);
+    const paciente = await pacienteModel.findById(pacienteId);
+    if (!paciente) {
+      return res.status(404).json(buildResponse(false, null, 'Paciente no encontrado'));
+    }
+    if (req.user.rol === 'profesional') {
+      const profesionalLogueado = await profesionalModel.findByUserId(req.user.id);
+      if (!profesionalLogueado) {
+        return res.status(403).json(buildResponse(false, null, 'No tiene permisos para realizar esta acción'));
+      }
+      const soloSiMismo = profesionalIds.every((pid) => pid === profesionalLogueado.id);
+      if (!soloSiMismo) {
+        return res.status(403).json(buildResponse(false, null, 'Un profesional solo puede asignarse a sí mismo'));
+      }
+    }
+    for (const profId of profesionalIds) {
+      const profesional = await profesionalModel.findById(profId);
+      if (!profesional) {
+        return res.status(404).json(buildResponse(false, null, `Profesional no encontrado: ${profId}`));
+      }
+    }
+    const asignaciones = await pacienteProfesionalModel.replaceAll(
+      pacienteId,
+      profesionalIds,
+      req.user.id
+    );
+    res.json(buildResponse(true, asignaciones, 'Asignaciones actualizadas correctamente'));
+  } catch (error) {
+    logger.error('Error en setAsignaciones:', error);
+    next(error);
+  }
+};
+
 module.exports = {
   getAll,
   getByDni,
@@ -406,5 +450,6 @@ module.exports = {
   deactivate,
   listAsignaciones,
   addAsignacion,
-  removeAsignacion
+  removeAsignacion,
+  setAsignaciones
 };

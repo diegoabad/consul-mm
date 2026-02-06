@@ -40,6 +40,13 @@ const mapPostgresError = (error) => {
         code: 'TABLE_NOT_FOUND',
         statusCode: 500
       };
+    case '42703': // undefined_column
+      return {
+        message: 'Columna no encontrada en la base de datos. ¿Ejecutaste las migraciones?',
+        code: 'COLUMN_NOT_FOUND',
+        statusCode: 500,
+        ...(process.env.NODE_ENV !== 'production' && { detail: error.message })
+      };
     case '23514': // check_violation
       return {
         message: 'El valor no es válido (revisar restricciones de la base de datos)',
@@ -147,7 +154,8 @@ const errorHandler = (err, req, res, next) => {
     statusCode = mappedError.statusCode;
     errorResponse.error = {
       message: mappedError.message,
-      code: mappedError.code
+      code: mappedError.code,
+      ...(mappedError.detail && { detail: mappedError.detail })
     };
     logger.error('Error de PostgreSQL:', { code: err.code, message: err.message });
   }

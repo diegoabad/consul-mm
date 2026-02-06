@@ -107,6 +107,13 @@ const asignacionParamsSchema = Joi.object({
   profesionalId: Joi.string().uuid().required()
 });
 
+const setAsignacionesBodySchema = Joi.object({
+  profesional_ids: Joi.array().items(Joi.string().uuid()).required().messages({
+    'array.base': 'profesional_ids debe ser un arreglo',
+    'string.guid': 'Cada id debe ser un UUID válido'
+  })
+});
+
 module.exports = {
   createPacienteSchema,
   updatePacienteSchema,
@@ -115,5 +122,6 @@ module.exports = {
   pacienteQuerySchema,
   byDniQuerySchema,
   addAsignacionBodySchema,
-  asignacionParamsSchema
+  asignacionParamsSchema,
+  setAsignacionesBodySchema
 };

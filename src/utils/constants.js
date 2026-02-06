@@ -163,6 +163,10 @@ const PERMISOS_POR_ROL = {
   ],
   
   [ROLES.SECRETARIA]: [
+    'profesionales.leer', // necesario para Turnos, Agendas, asignar pacientes, etc.
+    'usuarios.leer',
+    'usuarios.crear',
+    'usuarios.actualizar',
     'pacientes.crear',
     'pacientes.leer',
     'pacientes.actualizar',

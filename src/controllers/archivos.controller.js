@@ -9,6 +9,7 @@ const archivoModel = require('../models/archivo.model');
 const pacienteModel = require('../models/paciente.model');
 const profesionalModel = require('../models/profesional.model');
 const pacienteProfesionalModel = require('../models/pacienteProfesional.model');
+const usuarioModel = require('../models/usuario.model');
 const logger = require('../utils/logger');
 const { buildResponse } = require('../utils/helpers');
 const path = require('path');
@@ -75,7 +76,8 @@ const getById = async (req, res, next) => {
 
 /**
  * Obtener archivos de un paciente.
- * Si el usuario es profesional, debe estar asignado al paciente y solo ve sus propios archivos.
+ * - Administrador y secretaria: ven todos los archivos del paciente.
+ * - Profesional: debe estar asignado al paciente y solo ve sus propios archivos.
  */
 const getByPaciente = async (req, res, next) => {
   try {
@@ -99,8 +101,8 @@ const getByPaciente = async (req, res, next) => {
       return res.json(buildResponse(true, archivos, 'Archivos del paciente obtenidos exitosamente'));
     }
     
+    // Administrador y secretaria: todos los archivos del paciente
     const archivos = await archivoModel.findByPaciente(id);
-    
     res.json(buildResponse(true, archivos, 'Archivos del paciente obtenidos exitosamente'));
   } catch (error) {
     logger.error('Error en getByPaciente archivos:', error);
@@ -110,7 +112,9 @@ const getByPaciente = async (req, res, next) => {
 
 /**
  * Subir archivo.
- * Si el usuario es profesional, solo puede subir como él mismo y debe estar asignado al paciente.
+ * - Administrador: puede subir en nombre de cualquier usuario (usuario_id en body).
+ * - Secretaria y profesional: solo pueden subir como ellos mismos.
+ * - Profesional: además debe estar asignado al paciente.
  */
 const upload = async (req, res, next) => {
   try {
@@ -118,7 +122,7 @@ const upload = async (req, res, next) => {
       return res.status(400).json(buildResponse(false, null, 'No se proporcionó ningún archivo'));
     }
     
-    let { paciente_id, profesional_id, descripcion } = req.body;
+    let { paciente_id, usuario_id, profesional_id, descripcion } = req.body;
     
     if (req.user.rol === 'profesional') {
       const profesional = await profesionalModel.findByUserId(req.user.id);
@@ -128,6 +132,7 @@ const upload = async (req, res, next) => {
         }
         return res.status(403).json(buildResponse(false, null, 'Profesional no encontrado'));
       }
+      usuario_id = req.user.id;
       profesional_id = profesional.id;
       const pacienteIds = await pacienteProfesionalModel.getPacienteIdsByProfesional(profesional.id);
       if (!pacienteIds.includes(paciente_id)) {
@@ -136,6 +141,26 @@ const upload = async (req, res, next) => {
         }
         return res.status(403).json(buildResponse(false, null, 'Debe estar asignado al paciente para subir archivos'));
       }
+    } else {
+      // Solo administrador puede subir en nombre de otro usuario; secretaria siempre como ella misma
+      if (req.user.rol === 'secretaria') {
+        usuario_id = req.user.id;
+      }
+      if (!usuario_id) {
+        if (req.file.path) {
+          try { fs.unlinkSync(req.file.path); } catch (err) { logger.error('Error eliminando archivo temporal:', err); }
+        }
+        return res.status(400).json(buildResponse(false, null, 'El usuario_id es requerido'));
+      }
+      const usuarioSubido = await usuarioModel.findById(usuario_id);
+      if (!usuarioSubido || !usuarioSubido.activo) {
+        if (req.file.path) {
+          try { fs.unlinkSync(req.file.path); } catch (err) { logger.error('Error eliminando archivo temporal:', err); }
+        }
+        return res.status(404).json(buildResponse(false, null, 'Usuario no encontrado o inactivo'));
+      }
+      const profDelUsuario = await profesionalModel.findByUserId(usuario_id);
+      profesional_id = profDelUsuario ? profDelUsuario.id : null;
     }
     
     // Verificar que el paciente existe y está activo
@@ -164,30 +189,20 @@ const upload = async (req, res, next) => {
       return res.status(400).json(buildResponse(false, null, 'No se puede subir archivo para un paciente inactivo'));
     }
     
-    // Verificar que el profesional existe y no está bloqueado
-    const profesional = await profesionalModel.findById(profesional_id);
-    if (!profesional) {
-      // Eliminar archivo subido si el profesional no existe
-      if (req.file.path) {
-        try {
-          fs.unlinkSync(req.file.path);
-        } catch (err) {
-          logger.error('Error eliminando archivo temporal:', err);
+    if (profesional_id) {
+      const profesional = await profesionalModel.findById(profesional_id);
+      if (!profesional) {
+        if (req.file.path) {
+          try { fs.unlinkSync(req.file.path); } catch (err) { logger.error('Error eliminando archivo temporal:', err); }
         }
+        return res.status(404).json(buildResponse(false, null, 'Profesional no encontrado'));
       }
-      return res.status(404).json(buildResponse(false, null, 'Profesional no encontrado'));
-    }
-    
-    if (profesional.bloqueado) {
-      // Eliminar archivo subido si el profesional está bloqueado
-      if (req.file.path) {
-        try {
-          fs.unlinkSync(req.file.path);
-        } catch (err) {
-          logger.error('Error eliminando archivo temporal:', err);
+      if (profesional.bloqueado) {
+        if (req.file.path) {
+          try { fs.unlinkSync(req.file.path); } catch (err) { logger.error('Error eliminando archivo temporal:', err); }
         }
+        return res.status(400).json(buildResponse(false, null, 'No se puede subir archivo para un profesional bloqueado'));
       }
-      return res.status(400).json(buildResponse(false, null, 'No se puede subir archivo para un profesional bloqueado'));
     }
     
     // Mover archivo del directorio temporal a la carpeta del paciente
@@ -226,7 +241,8 @@ const upload = async (req, res, next) => {
     // Crear registro en la base de datos
     const archivo = await archivoModel.create({
       paciente_id,
-      profesional_id,
+      usuario_id,
+      profesional_id: profesional_id || null,
       nombre_archivo: req.file.originalname,
       tipo_archivo: req.file.mimetype,
       url_archivo: urlArchivo,

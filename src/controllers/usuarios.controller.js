@@ -56,6 +56,11 @@ const create = async (req, res, next) => {
   try {
     const { email, password, nombre, apellido, telefono, rol, activo } = req.body;
     
+    // Secretaria no puede crear usuarios con rol administrador
+    if (req.user && req.user.rol === 'secretaria' && rol === 'administrador') {
+      return res.status(403).json(buildResponse(false, null, 'No puedes crear usuarios con rol administrador'));
+    }
+    
     // Verificar si el email ya existe
     const existingUser = await usuarioModel.findByEmail(email);
     if (existingUser) {
@@ -98,9 +103,14 @@ const update = async (req, res, next) => {
       return res.status(404).json(buildResponse(false, null, 'Usuario no encontrado'));
     }
     
-    // Secretaria no puede editar un administrador
-    if (req.user.rol === 'secretaria' && usuario.rol === 'administrador') {
-      return res.status(403).json(buildResponse(false, null, 'No puedes editar un usuario administrador'));
+    // Secretaria no puede editar un administrador ni asignar rol administrador
+    if (req.user.rol === 'secretaria') {
+      if (usuario.rol === 'administrador') {
+        return res.status(403).json(buildResponse(false, null, 'No puedes editar un usuario administrador'));
+      }
+      if (updateData.rol === 'administrador') {
+        return res.status(403).json(buildResponse(false, null, 'No puedes asignar el rol administrador'));
+      }
     }
     
     // Si se cambia rol de admin a otro o se desactiva un admin, debe quedar al menos un admin activo

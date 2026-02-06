@@ -21,7 +21,7 @@ const findAll = async (filters = {}) => {
         e.motivo_consulta, e.diagnostico, e.tratamiento, e.observaciones,
         e.fecha_creacion, e.fecha_actualizacion,
         p.nombre as paciente_nombre, p.apellido as paciente_apellido, p.dni as paciente_dni,
-        prof.matricula, prof.especialidad,
+        prof.matricula, prof.especialidad as profesional_especialidad,
         u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido,
         t.fecha_hora_inicio as turno_fecha_inicio, t.estado as turno_estado
       FROM evoluciones_clinicas e
@@ -82,7 +82,7 @@ const findById = async (id) => {
         e.motivo_consulta, e.diagnostico, e.tratamiento, e.observaciones,
         e.fecha_creacion, e.fecha_actualizacion,
         p.nombre as paciente_nombre, p.apellido as paciente_apellido, p.dni as paciente_dni,
-        prof.matricula, prof.especialidad,
+        prof.matricula, prof.especialidad as profesional_especialidad,
         u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido,
         t.fecha_hora_inicio as turno_fecha_inicio, t.estado as turno_estado
       FROM evoluciones_clinicas e
@@ -114,7 +114,7 @@ const findByPaciente = async (pacienteId, fechaInicio = null, fechaFin = null) =
         e.id, e.paciente_id, e.profesional_id, e.turno_id, e.fecha_consulta,
         e.motivo_consulta, e.diagnostico, e.tratamiento, e.observaciones,
         e.fecha_creacion, e.fecha_actualizacion,
-        prof.matricula, prof.especialidad,
+        prof.matricula, prof.especialidad as profesional_especialidad,
         u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido
       FROM evoluciones_clinicas e
       INNER JOIN profesionales prof ON e.profesional_id = prof.id

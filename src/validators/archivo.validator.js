@@ -13,10 +13,14 @@ const createArchivoSchema = Joi.object({
       'string.guid': 'El paciente_id debe ser un UUID válido',
       'any.required': 'El paciente_id es requerido'
     }),
-  profesional_id: Joi.string().uuid().required()
+  usuario_id: Joi.string().uuid().required()
     .messages({
-      'string.guid': 'El profesional_id debe ser un UUID válido',
-      'any.required': 'El profesional_id es requerido'
+      'string.guid': 'El usuario_id debe ser un UUID válido',
+      'any.required': 'El usuario_id es requerido'
+    }),
+  profesional_id: Joi.string().uuid().optional().allow(null, '')
+    .messages({
+      'string.guid': 'El profesional_id debe ser un UUID válido'
     }),
   descripcion: Joi.string().optional().allow(null, '')
     .messages({

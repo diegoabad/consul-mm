@@ -95,9 +95,43 @@ const remove = async (paciente_id, profesional_id) => {
   }
 };
 
+/**
+ * Reemplazar todas las asignaciones de un paciente en una sola operación
+ * @param {string} paciente_id - UUID del paciente
+ * @param {string[]} profesionalIds - Array de UUIDs de profesionales (puede ser vacío)
+ * @param {string|null} asignado_por_usuario_id - UUID del usuario que realiza la acción
+ * @returns {Promise<Object[]>} Lista de asignaciones actualizada (con joins)
+ */
+const replaceAll = async (paciente_id, profesionalIds, asignado_por_usuario_id = null) => {
+  try {
+    await query('DELETE FROM paciente_profesional WHERE paciente_id = $1', [paciente_id]);
+    if (profesionalIds.length === 0) {
+      return [];
+    }
+    const values = [];
+    const placeholders = [];
+    let i = 1;
+    profesionalIds.forEach((profId) => {
+      placeholders.push(`($${i++}, $${i++}, $${i++})`);
+      values.push(paciente_id, profId, asignado_por_usuario_id);
+    });
+    await query(
+      `INSERT INTO paciente_profesional (paciente_id, profesional_id, asignado_por_usuario_id)
+       VALUES ${placeholders.join(', ')}
+       ON CONFLICT (paciente_id, profesional_id) DO NOTHING`,
+      values
+    );
+    return findAll({ paciente_id });
+  } catch (error) {
+    logger.error('Error en replaceAll paciente_profesional:', error);
+    throw error;
+  }
+};
+
 module.exports = {
   findAll,
   getPacienteIdsByProfesional,
   create,
   remove,
+  replaceAll,
 };
