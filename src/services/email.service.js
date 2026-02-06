@@ -40,14 +40,18 @@ if (useResend) {
  * @param {Object} options - Opciones del email: to, subject, text, html
  * @returns {Promise<Object>} Información del email enviado
  */
+// Remitente permitido por Resend sin verificar dominio (solo para pruebas)
+const RESEND_FROM_DEFAULT = 'Consultorio <onboarding@resend.dev>';
+
 const sendEmail = async (options) => {
-  const from = process.env.RESEND_FROM || defaultEmailOptions.from;
   const html = options.html || options.text;
 
   try {
     if (useResend && resendClient) {
+      // Resend solo permite enviar desde onboarding@resend.dev o dominios verificados en resend.com/domains
+      const from = process.env.RESEND_FROM || RESEND_FROM_DEFAULT;
       const { data, error } = await resendClient.emails.send({
-        from: typeof from === 'string' ? from : (from || 'Consultorio <onboarding@resend.dev>'),
+        from: typeof from === 'string' ? from : RESEND_FROM_DEFAULT,
         to: options.to,
         subject: options.subject,
         html: html || undefined,

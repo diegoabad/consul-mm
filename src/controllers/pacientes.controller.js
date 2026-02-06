@@ -9,7 +9,7 @@ const pacienteModel = require('../models/paciente.model');
 const profesionalModel = require('../models/profesional.model');
 const pacienteProfesionalModel = require('../models/pacienteProfesional.model');
 const logger = require('../utils/logger');
-const { buildResponse } = require('../utils/helpers');
+const { buildResponse, normalizeToLowerCase } = require('../utils/helpers');
 
 /**
  * Listar todos los pacientes (para profesional solo los asignados)
@@ -55,6 +55,19 @@ const getByDni = async (req, res, next) => {
     const paciente = await pacienteModel.findByDni(String(dni).trim());
     if (!paciente) {
       return res.status(404).json(buildResponse(false, null, 'Paciente no encontrado'));
+    }
+    // Si es profesional, indicar si ya tiene asignado este paciente (para mostrar "Ver ficha" en el modal)
+    if (req.user.rol === 'profesional') {
+      const profesional = await profesionalModel.findByUserId(req.user.id);
+      let ya_asignado = false;
+      if (profesional) {
+        const asignaciones = await pacienteProfesionalModel.findAll({
+          paciente_id: paciente.id,
+          profesional_id: profesional.id
+        });
+        ya_asignado = asignaciones.length > 0;
+      }
+      return res.json(buildResponse(true, { ...paciente, ya_asignado }, 'Paciente obtenido exitosamente'));
     }
     res.json(buildResponse(true, paciente, 'Paciente obtenido exitosamente'));
   } catch (error) {
@@ -154,15 +167,15 @@ const create = async (req, res, next) => {
     
     const nuevoPaciente = await pacienteModel.create({
       dni,
-      nombre,
-      apellido,
+      nombre: normalizeToLowerCase(nombre) ?? nombre,
+      apellido: normalizeToLowerCase(apellido) ?? apellido,
       fecha_nacimiento: fecha_nacimiento || null,
       telefono: telefono || null,
       email: email || null,
-      direccion: direccion || null,
-      obra_social: obra_social || null,
+      direccion: direccion ? normalizeToLowerCase(direccion) : null,
+      obra_social: obra_social ? normalizeToLowerCase(obra_social) : null,
       numero_afiliado: numero_afiliado || null,
-      contacto_emergencia_nombre: contacto_emergencia_nombre || null,
+      contacto_emergencia_nombre: contacto_emergencia_nombre ? normalizeToLowerCase(contacto_emergencia_nombre) : null,
       contacto_emergencia_telefono: contacto_emergencia_telefono || null,
       activo: activo !== undefined ? activo : true
     });
@@ -197,6 +210,13 @@ const update = async (req, res, next) => {
         return res.status(409).json(buildResponse(false, null, 'El DNI ya está registrado'));
       }
     }
+    
+    // Normalizar textos a minúsculas para consistencia
+    if (updateData.nombre != null) updateData.nombre = normalizeToLowerCase(updateData.nombre) ?? updateData.nombre;
+    if (updateData.apellido != null) updateData.apellido = normalizeToLowerCase(updateData.apellido) ?? updateData.apellido;
+    if (updateData.direccion != null) updateData.direccion = updateData.direccion ? normalizeToLowerCase(updateData.direccion) : updateData.direccion;
+    if (updateData.obra_social != null) updateData.obra_social = updateData.obra_social ? normalizeToLowerCase(updateData.obra_social) : updateData.obra_social;
+    if (updateData.contacto_emergencia_nombre != null) updateData.contacto_emergencia_nombre = updateData.contacto_emergencia_nombre ? normalizeToLowerCase(updateData.contacto_emergencia_nombre) : updateData.contacto_emergencia_nombre;
     
     const pacienteActualizado = await pacienteModel.update(id, updateData);
     
@@ -329,6 +349,13 @@ const addAsignacion = async (req, res, next) => {
     const profesional = await profesionalModel.findById(profesional_id);
     if (!profesional) {
       return res.status(404).json(buildResponse(false, null, 'Profesional no encontrado'));
+    }
+    // Si es profesional, solo puede asignarse a sí mismo
+    if (req.user.rol === 'profesional') {
+      const profesionalLogueado = await profesionalModel.findByUserId(req.user.id);
+      if (!profesionalLogueado || profesionalLogueado.id !== profesional_id) {
+        return res.status(403).json(buildResponse(false, null, 'No tiene permisos para realizar esta acción'));
+      }
     }
     const row = await pacienteProfesionalModel.create({
       paciente_id: pacienteId,

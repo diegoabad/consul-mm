@@ -85,11 +85,11 @@ const pacienteQuerySchema = Joi.object({
 });
 
 const byDniQuerySchema = Joi.object({
-  dni: Joi.string().min(7).max(8).pattern(/^\d+$/).required()
+  dni: Joi.string().min(6).max(8).pattern(/^\d+$/).required()
     .messages({
       'string.pattern.base': 'El DNI debe contener solo números',
-      'string.min': 'El DNI debe tener 7 u 8 dígitos',
-      'string.max': 'El DNI debe tener 7 u 8 dígitos',
+      'string.min': 'El DNI debe tener entre 6 y 8 dígitos',
+      'string.max': 'El DNI debe tener entre 6 y 8 dígitos',
       'any.required': 'El DNI es requerido'
     })
 });

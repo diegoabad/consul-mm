@@ -33,7 +33,8 @@ const createTurnoSchema = Joi.object({
       'date.greater': 'La fecha_hora_fin debe ser posterior a fecha_hora_inicio',
       'any.required': 'La fecha_hora_fin es requerida'
     }),
-  estado: Joi.string().valid(...Object.values(ESTADOS_TURNO)).default(ESTADOS_TURNO.PENDIENTE), // pendiente, confirmado, cancelado, completado, ausente
+  estado: Joi.string().valid(...Object.values(ESTADOS_TURNO)).default(ESTADOS_TURNO.PENDIENTE),
+  sobreturno: Joi.boolean().optional().default(false),
   motivo: Joi.string().optional().allow(null, '')
 });
 

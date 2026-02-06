@@ -13,6 +13,7 @@ const bloqueModel = require('../models/bloque.model');
 const agendaModel = require('../models/agenda.model');
 const excepcionAgendaModel = require('../models/excepcionAgenda.model');
 const emailService = require('../services/email.service');
+const logModel = require('../models/log.model');
 const logger = require('../utils/logger');
 const { buildResponse } = require('../utils/helpers');
 const { ESTADOS_TURNO } = require('../utils/constants');
@@ -103,13 +104,16 @@ const getByProfesional = async (req, res, next) => {
 
 /**
  * Obtener turnos de un paciente.
- * Si el usuario es profesional, solo puede ver turnos del paciente si lo tiene asignado (o es su turno; los turnos propios se listan por getByProfesional).
+ * - Admin/secretaria: todos los turnos del paciente.
+ * - Profesional: solo turnos de ese paciente con ese profesional (y solo si tiene asignado al paciente).
  */
 const getByPaciente = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { fecha_inicio, fecha_fin } = req.query;
-    
+
+    let turnos = await turnoModel.findByPaciente(id, fecha_inicio || null, fecha_fin || null);
+
     if (req.user.rol === 'profesional') {
       const profesional = await profesionalModel.findByUserId(req.user.id);
       if (!profesional) {
@@ -119,10 +123,9 @@ const getByPaciente = async (req, res, next) => {
       if (!pacienteIds.includes(id)) {
         return res.status(403).json(buildResponse(false, null, 'No tiene asignado este paciente'));
       }
+      turnos = turnos.filter((t) => t.profesional_id === profesional.id);
     }
-    
-    const turnos = await turnoModel.findByPaciente(id, fecha_inicio || null, fecha_fin || null);
-    
+
     res.json(buildResponse(true, turnos, 'Turnos del paciente obtenidos exitosamente'));
   } catch (error) {
     logger.error('Error en getByPaciente turnos:', error);
@@ -175,6 +178,7 @@ const create = async (req, res, next) => {
       fecha_hora_inicio,
       fecha_hora_fin,
       estado,
+      sobreturno,
       motivo
     } = req.body;
     
@@ -206,15 +210,15 @@ const create = async (req, res, next) => {
       return res.status(400).json(buildResponse(false, null, 'No se pueden crear turnos en días u horarios en que el profesional no atiende'));
     }
     
-    // Verificar disponibilidad (solapamiento con otros turnos)
-    const disponible = await turnoModel.checkAvailability(
+    // No permitir que el mismo paciente tenga dos turnos en el mismo horario (misma agenda)
+    const mismoPacienteOcupado = await turnoModel.hasPacienteOverlap(
       profesional_id,
+      paciente_id,
       new Date(fecha_hora_inicio),
       new Date(fecha_hora_fin)
     );
-    
-    if (!disponible) {
-      return res.status(409).json(buildResponse(false, null, 'El horario no está disponible'));
+    if (mismoPacienteOcupado) {
+      return res.status(409).json(buildResponse(false, null, 'Este paciente ya tiene un turno en ese horario'));
     }
     
     // Verificar que no caiga dentro de un bloque no disponible (vacaciones, ausencias, etc.)
@@ -233,6 +237,7 @@ const create = async (req, res, next) => {
       fecha_hora_inicio: new Date(fecha_hora_inicio),
       fecha_hora_fin: new Date(fecha_hora_fin),
       estado: estado || ESTADOS_TURNO.PENDIENTE,
+      sobreturno: Boolean(sobreturno),
       motivo: motivo || null
     });
     
@@ -251,10 +256,46 @@ const create = async (req, res, next) => {
 
     // Obtener el turno completo con datos relacionados
     const turnoCompleto = await turnoModel.findById(nuevoTurno.id);
-    // Envío de email en segundo plano (no bloquea la respuesta)
+    // Envío de email en segundo plano (no bloquea la respuesta). Capturamos usuario ahora por si el callback corre después de cerrar la request.
     if (turnoCompleto?.paciente_email) {
+      const pathRuta = req.originalUrl || req.path || req.url;
+      const usuarioId = req.user?.id ?? null;
+      const usuarioRol = req.user?.rol ?? null;
+      let bodySafe = undefined;
+      if (req.body && typeof req.body === 'object') {
+        const omitir = ['password', 'password_hash', 'token', 'refreshToken', 'confirmPassword'];
+        bodySafe = Object.fromEntries(
+          Object.entries(req.body).filter(([k]) => !omitir.includes(k))
+        );
+      }
+      const paramsLog = {
+        context: 'email_turno_asignado',
+        email_destino: turnoCompleto.paciente_email,
+        turno_id: turnoCompleto.id,
+        paciente_id: turnoCompleto.paciente_id,
+        profesional_id: turnoCompleto.profesional_id,
+        fecha_turno: turnoCompleto.fecha,
+        hora_turno: turnoCompleto.hora_inicio,
+        body_request: bodySafe,
+      };
       emailService.sendTurnoConfirmation(turnoCompleto, turnoCompleto.paciente_email)
-        .catch((err) => logger.error('Error enviando email de turno asignado:', err));
+        .catch(async (err) => {
+          logger.error('Error enviando email de turno asignado:', err);
+          try {
+            await logModel.create({
+              origen: 'back',
+              usuario_id: usuarioId,
+              rol: usuarioRol,
+              ruta: pathRuta,
+              metodo: req.method,
+              params: JSON.stringify(paramsLog, null, 2),
+              mensaje: err.message || 'Error enviando email de turno asignado',
+              stack: err.stack || null,
+            });
+          } catch (logErr) {
+            logger.error('No se pudo guardar log de error (email turno):', logErr);
+          }
+        });
     }
     res.status(201).json(buildResponse(true, turnoCompleto, 'Turno creado exitosamente'));
   } catch (error) {

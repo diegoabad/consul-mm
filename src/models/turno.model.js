@@ -36,7 +36,7 @@ const findAll = async (filters = {}) => {
     let sql = `
       SELECT 
         t.id, t.profesional_id, t.paciente_id, t.fecha_hora_inicio::text as fecha_hora_inicio, t.fecha_hora_fin::text as fecha_hora_fin,
-        t.estado, t.motivo, t.cancelado_por, t.razon_cancelacion,
+        t.estado, t.sobreturno, t.motivo, t.cancelado_por, t.razon_cancelacion,
         t.fecha_creacion, t.fecha_actualizacion,
         p.matricula, p.especialidad,
         u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido, u_prof.email as profesional_email,
@@ -75,7 +75,7 @@ const findAll = async (filters = {}) => {
       params.push(filters.fecha_fin);
     }
     
-    sql += ' ORDER BY t.fecha_hora_inicio DESC';
+    sql += ' ORDER BY t.fecha_hora_inicio ASC';
     
     const result = await query(sql, params);
     const rows = result.rows.map((r) => ({
@@ -100,7 +100,7 @@ const findById = async (id) => {
     const result = await query(
       `SELECT 
         t.id, t.profesional_id, t.paciente_id, t.fecha_hora_inicio::text as fecha_hora_inicio, t.fecha_hora_fin::text as fecha_hora_fin,
-        t.estado, t.motivo, t.cancelado_por, t.razon_cancelacion,
+        t.estado, t.sobreturno, t.motivo, t.cancelado_por, t.razon_cancelacion,
         t.fecha_creacion, t.fecha_actualizacion,
         p.matricula, p.especialidad,
         u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido, u_prof.email as profesional_email,
@@ -136,7 +136,7 @@ const findByProfesional = async (profesionalId, fechaInicio = null, fechaFin = n
     let sql = `
       SELECT 
         t.id, t.profesional_id, t.paciente_id, t.fecha_hora_inicio::text as fecha_hora_inicio, t.fecha_hora_fin::text as fecha_hora_fin,
-        t.estado, t.motivo, t.cancelado_por, t.razon_cancelacion,
+        t.estado, t.sobreturno, t.motivo, t.cancelado_por, t.razon_cancelacion,
         t.fecha_creacion, t.fecha_actualizacion,
         pac.nombre as paciente_nombre, pac.apellido as paciente_apellido, pac.dni as paciente_dni, pac.telefono as paciente_telefono
       FROM turnos t
@@ -182,7 +182,7 @@ const findByPaciente = async (pacienteId, fechaInicio = null, fechaFin = null) =
     let sql = `
       SELECT 
         t.id, t.profesional_id, t.paciente_id, t.fecha_hora_inicio::text as fecha_hora_inicio, t.fecha_hora_fin::text as fecha_hora_fin,
-        t.estado, t.motivo, t.cancelado_por, t.razon_cancelacion,
+        t.estado, t.sobreturno, t.motivo, t.cancelado_por, t.razon_cancelacion,
         t.fecha_creacion, t.fecha_actualizacion,
         p.matricula, p.especialidad,
         u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido
@@ -261,6 +261,39 @@ const checkAvailability = async (profesionalId, fechaHoraInicio, fechaHoraFin, e
 };
 
 /**
+ * Verificar si el mismo paciente ya tiene un turno que solapa con el horario dado (misma agenda/profesional).
+ * Se usa para impedir doble turno del mismo paciente en el mismo horario.
+ * @returns {Promise<boolean>} true si ya tiene un turno en ese horario
+ */
+const hasPacienteOverlap = async (profesionalId, pacienteId, fechaHoraInicio, fechaHoraFin) => {
+  try {
+    const result = await query(
+      `SELECT COUNT(*) as count
+       FROM turnos
+       WHERE profesional_id = $1 AND paciente_id = $2
+         AND estado NOT IN ($3, $4)
+         AND (
+           (fecha_hora_inicio < $5 AND fecha_hora_fin > $6) OR
+           (fecha_hora_inicio >= $6 AND fecha_hora_inicio < $5) OR
+           (fecha_hora_fin > $6 AND fecha_hora_fin <= $5)
+         )`,
+      [
+        profesionalId,
+        pacienteId,
+        ESTADOS_TURNO.CANCELADO,
+        ESTADOS_TURNO.COMPLETADO,
+        fechaHoraFin,
+        fechaHoraInicio
+      ]
+    );
+    return parseInt(result.rows[0].count) > 0;
+  } catch (error) {
+    logger.error('Error en hasPacienteOverlap turno:', error);
+    throw error;
+  }
+};
+
+/**
  * Crear nuevo turno
  * @param {Object} turnoData - Datos del turno
  * @returns {Promise<Object>} Turno creado
@@ -273,6 +306,7 @@ const create = async (turnoData) => {
       fecha_hora_inicio,
       fecha_hora_fin,
       estado = ESTADOS_TURNO.PENDIENTE,
+      sobreturno = false,
       motivo
     } = turnoData;
     // Guardar siempre en UTC como "YYYY-MM-DD HH:mm:ss" para no depender de la zona del servidor
@@ -282,15 +316,15 @@ const create = async (turnoData) => {
     const result = await query(
       `INSERT INTO turnos (
         profesional_id, paciente_id, fecha_hora_inicio, fecha_hora_fin,
-        estado, motivo
+        estado, sobreturno, motivo
       )
-      VALUES ($1, $2, $3, $4, $5, $6)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING id, profesional_id, paciente_id, fecha_hora_inicio::text as fecha_hora_inicio, fecha_hora_fin::text as fecha_hora_fin,
-                estado, motivo, cancelado_por, razon_cancelacion,
+                estado, sobreturno, motivo, cancelado_por, razon_cancelacion,
                 fecha_creacion, fecha_actualizacion`,
       [
         profesional_id, paciente_id, inicioStr, finStr,
-        estado, motivo || null
+        estado, Boolean(sobreturno), motivo || null
       ]
     );
     const row = result.rows[0];
@@ -340,7 +374,7 @@ const update = async (id, turnoData) => {
       SET ${updates.join(', ')} 
       WHERE id = $${paramIndex}
       RETURNING id, profesional_id, paciente_id, fecha_hora_inicio::text as fecha_hora_inicio, fecha_hora_fin::text as fecha_hora_fin,
-                estado, motivo, cancelado_por, razon_cancelacion,
+                estado, sobreturno, motivo, cancelado_por, razon_cancelacion,
                 fecha_creacion, fecha_actualizacion
     `;
     
@@ -457,6 +491,7 @@ module.exports = {
   findByProfesional,
   findByPaciente,
   checkAvailability,
+  hasPacienteOverlap,
   create,
   update,
   cancel,

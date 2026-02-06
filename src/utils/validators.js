@@ -8,11 +8,11 @@
 const Joi = require('joi');
 
 /**
- * Validador de DNI argentino (7-8 dígitos)
+ * Validador de DNI (6-8 dígitos)
  */
 const validateDNI = () => {
-  return Joi.string().pattern(/^\d{7,8}$/).messages({
-    'string.pattern.base': 'El DNI debe tener entre 7 y 8 dígitos',
+  return Joi.string().pattern(/^\d{6,8}$/).messages({
+    'string.pattern.base': 'El DNI debe tener entre 6 y 8 dígitos',
     'string.empty': 'El DNI no puede estar vacío',
     'string.base': 'El DNI debe ser un texto'
   });

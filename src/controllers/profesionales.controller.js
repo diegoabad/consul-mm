@@ -8,7 +8,7 @@
 const profesionalModel = require('../models/profesional.model');
 const usuarioModel = require('../models/usuario.model');
 const logger = require('../utils/logger');
-const { buildResponse } = require('../utils/helpers');
+const { buildResponse, normalizeToLowerCase } = require('../utils/helpers');
 const { ROLES } = require('../utils/constants');
 
 /**
@@ -40,10 +40,17 @@ function normalizeFechaInicioContratoToYYYYMMDD(value) {
 }
 
 /**
- * Listar todos los profesionales
+ * Listar todos los profesionales.
+ * Si el usuario es rol profesional, solo devuelve su propio registro (para agenda, etc.).
  */
 const getAll = async (req, res, next) => {
   try {
+    if (req.user.rol === ROLES.PROFESIONAL) {
+      const profesional = await profesionalModel.findByUserId(req.user.id);
+      const list = profesional ? [profesional] : [];
+      return res.json(buildResponse(true, list, 'Profesional obtenido exitosamente'));
+    }
+
     const { activo, bloqueado, especialidad, estado_pago } = req.query;
     const filters = {};
     
@@ -147,16 +154,16 @@ const create = async (req, res, next) => {
     
     const nuevoProfesional = await profesionalModel.create({
       usuario_id,
-      matricula: matricula || null,
-      especialidad: especialidad || null,
+      matricula: matricula ? normalizeToLowerCase(matricula) : null,
+      especialidad: especialidad ? normalizeToLowerCase(especialidad) : null,
       estado_pago: estado_pago || 'al_dia',
       bloqueado: bloqueado !== undefined ? bloqueado : false,
-      razon_bloqueo: razon_bloqueo || null,
+      razon_bloqueo: razon_bloqueo ? normalizeToLowerCase(razon_bloqueo) : null,
       fecha_ultimo_pago: fecha_ultimo_pago || null,
       fecha_inicio_contrato: normalizeFechaInicioContratoToYYYYMMDD(fecha_inicio_contrato),
       monto_mensual: monto_mensual || null,
       tipo_periodo_pago: tipo_periodo_pago || 'mensual',
-      observaciones: observaciones || null
+      observaciones: observaciones ? normalizeToLowerCase(observaciones) : null
     });
     
     logger.info('Profesional creado:', { id: nuevoProfesional.id, usuario_id, matricula });
@@ -197,6 +204,10 @@ const update = async (req, res, next) => {
     if (updateData.fecha_inicio_contrato !== undefined) {
       updateData.fecha_inicio_contrato = normalizeFechaInicioContratoToYYYYMMDD(updateData.fecha_inicio_contrato);
     }
+    if (updateData.matricula != null && updateData.matricula !== '') updateData.matricula = normalizeToLowerCase(updateData.matricula);
+    if (updateData.especialidad != null && updateData.especialidad !== '') updateData.especialidad = normalizeToLowerCase(updateData.especialidad);
+    if (updateData.razon_bloqueo != null && updateData.razon_bloqueo !== '') updateData.razon_bloqueo = normalizeToLowerCase(updateData.razon_bloqueo);
+    if (updateData.observaciones != null && updateData.observaciones !== '') updateData.observaciones = normalizeToLowerCase(updateData.observaciones);
     const profesionalActualizado = await profesionalModel.update(id, updateData);
     
     logger.info('Profesional actualizado:', { id, cambios: updateData });
@@ -253,7 +264,8 @@ const block = async (req, res, next) => {
       return res.status(400).json(buildResponse(false, null, 'El profesional ya está bloqueado'));
     }
     
-    const profesionalBloqueado = await profesionalModel.block(id, razon_bloqueo || null);
+    const razonNormalizada = razon_bloqueo ? normalizeToLowerCase(razon_bloqueo) : null;
+    const profesionalBloqueado = await profesionalModel.block(id, razonNormalizada);
     
     logger.info('Profesional bloqueado:', { id, razon_bloqueo });
     

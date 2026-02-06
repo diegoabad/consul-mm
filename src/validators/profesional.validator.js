@@ -9,7 +9,7 @@ const Joi = require('joi');
 
 // Estados de pago permitidos según la BD
 const ESTADOS_PAGO_PROFESIONAL = ['al_dia', 'pendiente', 'moroso'];
-const TIPO_PERIODO_PAGO = ['mensual', 'quincenal', 'semanal'];
+const TIPO_PERIODO_PAGO = ['mensual', 'quincenal', 'semanal', 'anual'];
 
 const createProfesionalSchema = Joi.object({
   usuario_id: Joi.string().uuid().required()

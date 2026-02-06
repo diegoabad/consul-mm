@@ -3,9 +3,11 @@
  * 
  * Este middleware captura todos los errores de la aplicación y los maneja
  * de forma centralizada, retornando respuestas consistentes.
+ * Los errores se persisten en la tabla logs (source=back).
  */
 
 const logger = require('../utils/logger');
+const { logModel } = require('../models');
 
 /**
  * Mapear errores de PostgreSQL a mensajes legibles
@@ -53,10 +55,52 @@ const mapPostgresError = (error) => {
   }
 };
 
+const SENSITIVE_KEYS = ['password', 'password_hash', 'token', 'refreshToken', 'confirmPassword', 'currentPassword', 'newPassword'];
+
+/**
+ * Copia el body sin campos sensibles para guardar en logs.
+ */
+function sanitizeBody(body) {
+  if (!body || typeof body !== 'object') return undefined;
+  return Object.fromEntries(
+    Object.entries(body).filter(([key]) => !SENSITIVE_KEYS.some(k => key.toLowerCase().includes(k.toLowerCase())))
+  );
+}
+
+/**
+ * Persiste el error en la tabla logs (back). No debe afectar la respuesta.
+ */
+const persistErrorLog = (err, req) => {
+  try {
+    const pathRuta = req.originalUrl || req.path || req.url;
+    const params = {
+      query: req.query && Object.keys(req.query).length > 0 ? req.query : undefined,
+      body: sanitizeBody(req.body),
+    };
+    // Identificar usuario si la petición venía autenticada (JWT)
+    const usuario_id = req.user?.id ?? null;
+    const rol = req.user?.rol ?? null;
+    logModel.create({
+      origen: 'back',
+      usuario_id,
+      rol,
+      ruta: pathRuta,
+      metodo: req.method,
+      params: JSON.stringify(params, null, 2),
+      mensaje: err.message || 'Error sin mensaje',
+      stack: err.stack || null,
+    }).catch((logErr) => logger.error('No se pudo guardar log de error:', logErr));
+  } catch (e) {
+    logger.error('Error al preparar log:', e);
+  }
+};
+
 /**
  * Middleware de manejo de errores
  */
 const errorHandler = (err, req, res, next) => {
+  persistErrorLog(err, req);
+
   let statusCode = 500;
   let errorResponse = {
     success: false,

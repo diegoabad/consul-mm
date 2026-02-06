@@ -8,7 +8,7 @@
 const usuarioModel = require('../models/usuario.model');
 const emailService = require('../services/email.service');
 const logger = require('../utils/logger');
-const { buildResponse } = require('../utils/helpers');
+const { buildResponse, normalizeToLowerCase } = require('../utils/helpers');
 
 /**
  * Listar todos los usuarios
@@ -65,8 +65,8 @@ const create = async (req, res, next) => {
     const nuevoUsuario = await usuarioModel.create({
       email,
       password,
-      nombre: nombre || '',
-      apellido: apellido || '',
+      nombre: normalizeToLowerCase(nombre) ?? (nombre || ''),
+      apellido: normalizeToLowerCase(apellido) ?? (apellido || ''),
       telefono: telefono || null,
       rol,
       activo: activo !== undefined ? activo : true
@@ -121,6 +121,9 @@ const update = async (req, res, next) => {
         return res.status(409).json(buildResponse(false, null, 'El email ya está en uso'));
       }
     }
+    
+    if (updateData.nombre != null) updateData.nombre = normalizeToLowerCase(updateData.nombre) ?? updateData.nombre;
+    if (updateData.apellido != null) updateData.apellido = normalizeToLowerCase(updateData.apellido) ?? updateData.apellido;
     
     const usuarioActualizado = await usuarioModel.update(id, updateData);
     

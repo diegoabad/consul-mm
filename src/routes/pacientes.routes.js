@@ -8,7 +8,7 @@ const express = require('express');
 const router = express.Router();
 const pacientesController = require('../controllers/pacientes.controller');
 const { authenticate } = require('../middlewares/auth.middleware');
-const { requirePermission } = require('../middlewares/permissions.middleware');
+const { requirePermission, requireAnyPermission } = require('../middlewares/permissions.middleware');
 const { validateBody, validateParams, validateQuery } = require('../middlewares/validate.middleware');
 const {
   createPacienteSchema,
@@ -57,11 +57,11 @@ router.get(
   pacientesController.listAsignaciones
 );
 
-// POST /:id/asignaciones - Asignar profesional al paciente
+// POST /:id/asignaciones - Asignar profesional al paciente (admin/secretaria: cualquiera; profesional: solo asignarse a sí mismo)
 router.post(
   '/:id/asignaciones',
   authenticate,
-  requirePermission('pacientes.actualizar'),
+  requireAnyPermission(['pacientes.actualizar', 'pacientes.asignar']),
   validateParams(pacienteParamsSchema),
   validateBody(addAsignacionBodySchema),
   pacientesController.addAsignacion

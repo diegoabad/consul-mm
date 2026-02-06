@@ -1,7 +1,10 @@
 /**
  * EMAIL.JS - Configuración de Nodemailer
- * 
- * Este archivo configura el servicio de envío de emails usando Nodemailer.
+ *
+ * En producción (ej. Render) SMTP suele dar "Connection timeout" porque muchos PaaS
+ * bloquean o limitan el puerto 587. La solución recomendada es usar Resend: en el panel
+ * de Render agregá RESEND_API_KEY (y opcionalmente RESEND_FROM). El servicio de email
+ * usará Resend en lugar de Nodemailer y no dependerá de SMTP.
  */
 
 const nodemailer = require('nodemailer');
@@ -23,8 +26,8 @@ const transporter = nodemailer.createTransport({
   tls: {
     rejectUnauthorized
   },
-  connectionTimeout: 10000,
-  greetingTimeout: 10000
+  connectionTimeout: 20000,
+  greetingTimeout: 15000
 });
 
 // Opciones por defecto para emails

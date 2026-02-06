@@ -62,6 +62,7 @@ const PERMISOS = [
   'pacientes.actualizar',
   'pacientes.eliminar',
   'pacientes.buscar',
+  'pacientes.asignar', // asignarse a un paciente (solo para profesionales)
   
   // Turnos
   'turnos.crear',
@@ -130,14 +131,19 @@ const PERMISOS_POR_ROL = {
   [ROLES.ADMINISTRADOR]: PERMISOS, // Administrador tiene todos los permisos
   
   [ROLES.PROFESIONAL]: [
+    'profesionales.leer', // solo para ver su propio registro (filtrado en backend)
+    'pacientes.crear',
     'pacientes.leer',
     'pacientes.buscar',
+    'pacientes.asignar',
     'turnos.crear',
     'turnos.leer',
     'turnos.actualizar',
     'turnos.confirmar',
     'turnos.completar',
     'agenda.leer',
+    'agenda.crear',
+    'agenda.actualizar',
     'agenda.bloques.crear',
     'agenda.bloques.eliminar',
     'agenda.excepciones.crear',

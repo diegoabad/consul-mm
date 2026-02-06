@@ -51,6 +51,17 @@ const sanitizeString = (str) => {
 };
 
 /**
+ * Normalizar texto a minúsculas para guardar en BD (pacientes, usuarios, profesionales).
+ * Devuelve string trim y en minúsculas; si no es string, devuelve null o el valor original.
+ */
+const normalizeToLowerCase = (str) => {
+  if (str == null) return str;
+  if (typeof str !== 'string') return str;
+  const t = str.trim();
+  return t === '' ? t : t.toLowerCase();
+};
+
+/**
  * Validar formato de email
  */
 const validateEmail = (email) => {
@@ -60,12 +71,12 @@ const validateEmail = (email) => {
 };
 
 /**
- * Validar DNI argentino (7-8 dígitos)
+ * Validar DNI (6-8 dígitos)
  */
 const validateDNI = (dni) => {
   if (!dni) return false;
   const dniStr = String(dni).trim();
-  const dniRegex = /^\d{7,8}$/;
+  const dniRegex = /^\d{6,8}$/;
   return dniRegex.test(dniStr);
 };
 
@@ -109,6 +120,7 @@ module.exports = {
   parseDate,
   generateUUID,
   sanitizeString,
+  normalizeToLowerCase,
   validateEmail,
   validateDNI,
   paginate,

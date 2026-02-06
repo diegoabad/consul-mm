@@ -22,6 +22,7 @@ const pagosRoutes = require('./pagos.routes');
 const notificacionesRoutes = require('./notificaciones.routes');
 const especialidadesRoutes = require('./especialidades.routes');
 const obrasSocialesRoutes = require('./obras-sociales.routes');
+const logsRoutes = require('./logs.routes');
 
 // Health check
 router.get('/health', (req, res) => {
@@ -46,5 +47,6 @@ router.use('/pagos', pagosRoutes);
 router.use('/notificaciones', notificacionesRoutes);
 router.use('/especialidades', especialidadesRoutes);
 router.use('/obras-sociales', obrasSocialesRoutes);
+router.use('/logs', logsRoutes);
 
 module.exports = router;

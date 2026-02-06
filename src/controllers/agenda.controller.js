@@ -84,11 +84,21 @@ const getAgendaByProfesional = async (req, res, next) => {
  * Guardar horarios de la semana: cierra el periodo vigente y crea nuevas configuraciones
  * (permite historial: los turnos pasados siguen visibles con la agenda que tenían)
  */
+/** Si el usuario es profesional, devuelve su profesional_id; si no, null */
+const getProfesionalIdSiProfesional = async (userId, rol) => {
+  if (rol !== 'profesional') return null;
+  const p = await profesionalModel.findByUserId(userId);
+  return p ? p.id : null;
+};
+
 const guardarHorariosSemana = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { horarios, fecha_desde: fechaDesde } = req.body;
-    
+    const miProfesionalId = await getProfesionalIdSiProfesional(req.user.id, req.user.rol);
+    if (miProfesionalId !== null && miProfesionalId !== id) {
+      return res.status(403).json(buildResponse(false, null, 'No tiene permisos para modificar la agenda de otro profesional'));
+    }
     const profesional = await profesionalModel.findById(id);
     if (!profesional) {
       return res.status(404).json(buildResponse(false, null, 'Profesional no encontrado'));
@@ -112,7 +122,10 @@ const guardarHorariosSemana = async (req, res, next) => {
 const createAgenda = async (req, res, next) => {
   try {
     const { profesional_id, dia_semana, hora_inicio, hora_fin, duracion_turno_minutos, activo, vigencia_desde } = req.body;
-    
+    const miProfesionalId = await getProfesionalIdSiProfesional(req.user.id, req.user.rol);
+    if (miProfesionalId !== null && miProfesionalId !== profesional_id) {
+      return res.status(403).json(buildResponse(false, null, 'No tiene permisos para crear agenda de otro profesional'));
+    }
     // Verificar que el profesional existe
     const profesional = await profesionalModel.findById(profesional_id);
     if (!profesional) {
@@ -163,13 +176,14 @@ const updateAgenda = async (req, res, next) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
-    
-    // Verificar que la configuración existe
     const agendaExistente = await agendaModel.findById(id);
     if (!agendaExistente) {
       return res.status(404).json(buildResponse(false, null, 'Configuración de agenda no encontrada'));
     }
-    
+    const miProfesionalId = await getProfesionalIdSiProfesional(req.user.id, req.user.rol);
+    if (miProfesionalId !== null && agendaExistente.profesional_id !== miProfesionalId) {
+      return res.status(403).json(buildResponse(false, null, 'No tiene permisos para modificar la agenda de otro profesional'));
+    }
     // Si se actualiza dia_semana o hora_inicio, verificar duplicado
     if (updateData.dia_semana !== undefined || updateData.hora_inicio !== undefined) {
       const diaSemana = updateData.dia_semana !== undefined ? updateData.dia_semana : agendaExistente.dia_semana;
@@ -227,12 +241,14 @@ const deleteAgenda = async (req, res, next) => {
 const activateAgenda = async (req, res, next) => {
   try {
     const { id } = req.params;
-    
     const agenda = await agendaModel.findById(id);
     if (!agenda) {
       return res.status(404).json(buildResponse(false, null, 'Configuración de agenda no encontrada'));
     }
-    
+    const miProfesionalId = await getProfesionalIdSiProfesional(req.user.id, req.user.rol);
+    if (miProfesionalId !== null && agenda.profesional_id !== miProfesionalId) {
+      return res.status(403).json(buildResponse(false, null, 'No tiene permisos para modificar la agenda de otro profesional'));
+    }
     if (agenda.activo) {
       return res.status(400).json(buildResponse(false, null, 'La configuración de agenda ya está activa'));
     }
@@ -252,12 +268,14 @@ const activateAgenda = async (req, res, next) => {
 const deactivateAgenda = async (req, res, next) => {
   try {
     const { id } = req.params;
-    
     const agenda = await agendaModel.findById(id);
     if (!agenda) {
       return res.status(404).json(buildResponse(false, null, 'Configuración de agenda no encontrada'));
     }
-    
+    const miProfesionalId = await getProfesionalIdSiProfesional(req.user.id, req.user.rol);
+    if (miProfesionalId !== null && agenda.profesional_id !== miProfesionalId) {
+      return res.status(403).json(buildResponse(false, null, 'No tiene permisos para modificar la agenda de otro profesional'));
+    }
     if (!agenda.activo) {
       return res.status(400).json(buildResponse(false, null, 'La configuración de agenda ya está inactiva'));
     }

@@ -28,6 +28,7 @@ const archivoModel = require('./archivo.model');
 const notaModel = require('./nota.model');
 const pagoModel = require('./pago.model');
 const notificacionModel = require('./notificacion.model');
+const logModel = require('./log.model');
 
 module.exports = {
   usuarioModel,
@@ -42,5 +43,6 @@ module.exports = {
   archivoModel,
   notaModel,
   pagoModel,
-  notificacionModel
+  notificacionModel,
+  logModel
 };
