@@ -41,9 +41,18 @@ const usuarioParamsSchema = Joi.object({
   id: Joi.string().uuid().required()
 });
 
+const usuarioQuerySchema = Joi.object({
+  rol: Joi.string().valid('administrador', 'profesional', 'secretaria').optional(),
+  activo: Joi.string().valid('true', 'false').optional(),
+  q: Joi.string().max(200).optional().allow(''),
+  page: Joi.number().integer().min(1).default(1),
+  limit: Joi.number().integer().min(1).max(100).default(10)
+});
+
 module.exports = {
   createUsuarioSchema,
   updateUsuarioSchema,
   updatePasswordSchema,
-  usuarioParamsSchema
+  usuarioParamsSchema,
+  usuarioQuerySchema
 };

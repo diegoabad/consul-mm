@@ -42,6 +42,7 @@ function normalizeFechaInicioContratoToYYYYMMDD(value) {
 /**
  * Listar todos los profesionales.
  * Si el usuario es rol profesional, solo devuelve su propio registro (para agenda, etc.).
+ * Si se envían page o limit en query, devuelve respuesta paginada: { data, total, page, limit, totalPages }.
  */
 const getAll = async (req, res, next) => {
   try {
@@ -51,16 +52,39 @@ const getAll = async (req, res, next) => {
       return res.json(buildResponse(true, list, 'Profesional obtenido exitosamente'));
     }
 
-    const { activo, bloqueado, especialidad, estado_pago } = req.query;
+    const { activo, bloqueado, especialidad, estado_pago, page, limit, id, tipo_periodo_pago } = req.query;
+    const hasPagination = page !== undefined || limit !== undefined;
+
+    if (hasPagination) {
+      const filters = {
+        page: page ? parseInt(String(page), 10) : 1,
+        limit: limit ? parseInt(String(limit), 10) : 10
+      };
+      if (activo !== undefined) filters.activo = activo === 'true';
+      if (bloqueado !== undefined) filters.bloqueado = bloqueado === 'true';
+      if (especialidad) filters.especialidad = especialidad;
+      if (estado_pago) filters.estado_pago = estado_pago;
+      if (id) filters.id = id;
+      if (tipo_periodo_pago) filters.tipo_periodo_pago = tipo_periodo_pago;
+
+      const { rows, total } = await profesionalModel.findAllPaginated(filters);
+      const totalPages = Math.ceil(total / filters.limit) || 0;
+      return res.json(buildResponse(true, {
+        data: rows,
+        total,
+        page: filters.page,
+        limit: filters.limit,
+        totalPages
+      }, 'Profesionales obtenidos exitosamente'));
+    }
+
     const filters = {};
-    
     if (activo !== undefined) filters.activo = activo === 'true';
     if (bloqueado !== undefined) filters.bloqueado = bloqueado === 'true';
     if (especialidad) filters.especialidad = especialidad;
     if (estado_pago) filters.estado_pago = estado_pago;
-    
+
     const profesionales = await profesionalModel.findAll(filters);
-    
     res.json(buildResponse(true, profesionales, 'Profesionales obtenidos exitosamente'));
   } catch (error) {
     logger.error('Error en getAll profesionales:', error);

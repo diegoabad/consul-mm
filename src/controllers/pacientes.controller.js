@@ -12,31 +12,42 @@ const logger = require('../utils/logger');
 const { buildResponse, normalizeToLowerCase } = require('../utils/helpers');
 
 /**
- * Listar todos los pacientes (para profesional solo los asignados)
+ * Listar pacientes con paginación y filtros (para profesional solo los asignados)
+ * Query: page, limit, q (búsqueda), activo, obra_social
  */
 const getAll = async (req, res, next) => {
   try {
-    const { activo, obra_social } = req.query;
-    const filters = {};
-    
+    const { activo, obra_social, q, page, limit } = req.query;
+    const filters = {
+      page: page ? parseInt(String(page), 10) : 1,
+      limit: limit ? parseInt(String(limit), 10) : 10
+    };
     if (activo !== undefined) filters.activo = activo === 'true';
     if (obra_social) filters.obra_social = obra_social;
-    
+    if (q && String(q).trim()) filters.q = String(q).trim();
+
     if (req.user.rol === 'profesional') {
       const profesional = await profesionalModel.findByUserId(req.user.id);
       if (!profesional) {
-        return res.json(buildResponse(true, [], 'Pacientes obtenidos exitosamente'));
+        return res.json(buildResponse(true, { data: [], total: 0, page: 1, limit: filters.limit, totalPages: 0 }, 'Pacientes obtenidos exitosamente'));
       }
       const pacienteIds = await pacienteProfesionalModel.getPacienteIdsByProfesional(profesional.id);
       if (pacienteIds.length === 0) {
-        return res.json(buildResponse(true, [], 'Pacientes obtenidos exitosamente'));
+        return res.json(buildResponse(true, { data: [], total: 0, page: 1, limit: filters.limit, totalPages: 0 }, 'Pacientes obtenidos exitosamente'));
       }
       filters.ids = pacienteIds;
     }
-    
-    const pacientes = await pacienteModel.findAll(filters);
-    
-    res.json(buildResponse(true, pacientes, 'Pacientes obtenidos exitosamente'));
+
+    const { rows, total } = await pacienteModel.findAllPaginated(filters);
+    const totalPages = Math.ceil(total / filters.limit) || 0;
+
+    res.json(buildResponse(true, {
+      data: rows,
+      total,
+      page: filters.page,
+      limit: filters.limit,
+      totalPages
+    }, 'Pacientes obtenidos exitosamente'));
   } catch (error) {
     logger.error('Error en getAll pacientes:', error);
     next(error);
@@ -154,6 +165,7 @@ const create = async (req, res, next) => {
       direccion,
       obra_social,
       numero_afiliado,
+      plan,
       contacto_emergencia_nombre,
       contacto_emergencia_telefono,
       activo
@@ -175,6 +187,7 @@ const create = async (req, res, next) => {
       direccion: direccion ? normalizeToLowerCase(direccion) : null,
       obra_social: obra_social ? normalizeToLowerCase(obra_social) : null,
       numero_afiliado: numero_afiliado || null,
+      plan: plan && String(plan).trim() ? String(plan).trim() : null,
       contacto_emergencia_nombre: contacto_emergencia_nombre ? normalizeToLowerCase(contacto_emergencia_nombre) : null,
       contacto_emergencia_telefono: contacto_emergencia_telefono || null,
       activo: activo !== undefined ? activo : true

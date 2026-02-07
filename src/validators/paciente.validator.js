@@ -43,6 +43,7 @@ const createPacienteSchema = Joi.object({
   direccion: Joi.string().max(500).optional().allow(null, ''),
   obra_social: Joi.string().max(100).optional().allow(null, ''),
   numero_afiliado: Joi.string().max(50).optional().allow(null, ''),
+  plan: Joi.string().max(100).optional().allow(null, ''),
   contacto_emergencia_nombre: Joi.string().max(100).optional().allow(null, ''),
   contacto_emergencia_telefono: validatePhone().optional().allow(null, ''),
   activo: Joi.boolean().default(true)
@@ -58,6 +59,7 @@ const updatePacienteSchema = Joi.object({
   direccion: Joi.string().max(500).optional().allow(null, ''),
   obra_social: Joi.string().max(100).optional().allow(null, ''),
   numero_afiliado: Joi.string().max(50).optional().allow(null, ''),
+  plan: Joi.string().max(100).optional().allow(null, ''),
   contacto_emergencia_nombre: Joi.string().max(100).optional().allow(null, ''),
   contacto_emergencia_telefono: validatePhone().optional().allow(null, ''),
   activo: Joi.boolean().optional()
@@ -81,7 +83,10 @@ const searchPacienteSchema = Joi.object({
 
 const pacienteQuerySchema = Joi.object({
   activo: Joi.string().valid('true', 'false').optional(),
-  obra_social: Joi.string().optional()
+  obra_social: Joi.string().optional(),
+  q: Joi.string().max(200).optional().allow(''),
+  page: Joi.number().integer().min(1).default(1),
+  limit: Joi.number().integer().min(1).max(100).default(10)
 });
 
 const byDniQuerySchema = Joi.object({

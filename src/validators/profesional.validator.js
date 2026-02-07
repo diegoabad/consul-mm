@@ -66,7 +66,11 @@ const profesionalQuerySchema = Joi.object({
   activo: Joi.string().valid('true', 'false').optional(),
   bloqueado: Joi.string().valid('true', 'false').optional(),
   especialidad: Joi.string().optional(),
-  estado_pago: Joi.string().valid(...ESTADOS_PAGO_PROFESIONAL).optional()
+  estado_pago: Joi.string().valid(...ESTADOS_PAGO_PROFESIONAL).optional(),
+  page: Joi.number().integer().min(1).optional(),
+  limit: Joi.number().integer().min(1).max(100).optional(),
+  id: Joi.string().uuid().optional(),
+  tipo_periodo_pago: Joi.string().valid(...TIPO_PERIODO_PAGO).optional()
 });
 
 module.exports = {

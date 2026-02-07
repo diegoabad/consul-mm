@@ -32,6 +32,51 @@ const findAllIncludingInactive = async () => {
 };
 
 /**
+ * Listar obras sociales con paginación y filtros
+ * @param {Object} filters - { page, limit, includeInactive, q }
+ * @returns {Promise<{ rows: Array, total: number }>}
+ */
+const findAllPaginated = async (filters = {}) => {
+  try {
+    const page = Math.max(1, parseInt(filters.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(filters.limit, 10) || 10));
+    const offset = (page - 1) * limit;
+    const includeInactive = filters.includeInactive === true || filters.includeInactive === 'true';
+    const q = (filters.q && String(filters.q).trim()) || '';
+
+    let where = includeInactive ? ' WHERE 1=1' : ' WHERE activo = true';
+    const countParams = [];
+    const dataParams = [];
+    let paramIndex = 1;
+
+    if (q) {
+      where += ` AND nombre ILIKE $${paramIndex}`;
+      countParams.push(`%${q}%`);
+      dataParams.push(`%${q}%`);
+      paramIndex += 1;
+    }
+
+    const countResult = await query(
+      `SELECT COUNT(*)::int AS total FROM obras_sociales ${where}`,
+      countParams
+    );
+    const total = countResult.rows[0]?.total ?? 0;
+
+    const dataParamsFinal = [...dataParams, limit, offset];
+    const limitIdx = dataParams.length + 1;
+    const offsetIdx = dataParams.length + 2;
+    const dataResult = await query(
+      `SELECT * FROM obras_sociales ${where} ORDER BY nombre ASC LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+      dataParamsFinal
+    );
+    return { rows: dataResult.rows, total };
+  } catch (error) {
+    logger.error('Error en findAllPaginated obras_sociales:', error);
+    throw error;
+  }
+};
+
+/**
  * Buscar obra social por ID
  */
 const findById = async (id) => {
@@ -177,6 +222,7 @@ const deleteById = async (id) => {
 module.exports = {
   findAll,
   findAllIncludingInactive,
+  findAllPaginated,
   findById,
   findByName,
   create,

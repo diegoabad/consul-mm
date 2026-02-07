@@ -134,6 +134,7 @@ const PERMISOS_POR_ROL = {
     'profesionales.leer', // solo para ver su propio registro (filtrado en backend)
     'pacientes.crear',
     'pacientes.leer',
+    'pacientes.actualizar',
     'pacientes.buscar',
     'pacientes.asignar',
     'turnos.crear',
@@ -155,6 +156,7 @@ const PERMISOS_POR_ROL = {
     'archivos.subir',
     'archivos.leer',
     'archivos.descargar',
+    'archivos.eliminar', // solo los que él subió (backend lo restringe)
     'notas.crear',
     'notas.leer',
     'notas.actualizar',

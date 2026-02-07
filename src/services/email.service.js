@@ -59,7 +59,16 @@ const sendEmail = async (options) => {
       });
       if (error) {
         logger.error('Error enviando email (Resend):', error);
-        throw new Error(error.message || 'Error al enviar email');
+        const msg = error.message || 'Error al enviar email';
+        // Guía rápida si Resend rechaza por dominio no verificado
+        if (typeof msg === 'string' && msg.includes('only send testing emails')) {
+          throw new Error(
+            'Para enviar emails a pacientes hay que verificar un dominio en Resend: ' +
+            'resend.com/domains → agregar dominio → luego en Render definir RESEND_FROM (ej: Consultorio <turnos@tudominio.com>). ' +
+            'Mientras tanto solo se puede enviar al email de la cuenta Resend.'
+          );
+        }
+        throw new Error(msg);
       }
       logger.info(`Email enviado exitosamente a ${options.to} (Resend):`, { id: data?.id });
       return data;

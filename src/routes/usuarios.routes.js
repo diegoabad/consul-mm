@@ -9,16 +9,17 @@ const router = express.Router();
 const usuariosController = require('../controllers/usuarios.controller');
 const { authenticate } = require('../middlewares/auth.middleware');
 const { requirePermission } = require('../middlewares/permissions.middleware');
-const { validateBody, validateParams } = require('../middlewares/validate.middleware');
+const { validateBody, validateParams, validateQuery } = require('../middlewares/validate.middleware');
 const {
   createUsuarioSchema,
   updateUsuarioSchema,
   updatePasswordSchema,
-  usuarioParamsSchema
+  usuarioParamsSchema,
+  usuarioQuerySchema
 } = require('../validators/usuario.validator');
 
-// GET / - Listar usuarios
-router.get('/', authenticate, requirePermission('usuarios.leer'), usuariosController.getAll);
+// GET / - Listar usuarios (paginado y filtros)
+router.get('/', authenticate, requirePermission('usuarios.leer'), validateQuery(usuarioQuerySchema), usuariosController.getAll);
 
 // GET /:id - Obtener usuario
 router.get('/:id', authenticate, requirePermission('usuarios.leer'), validateParams(usuarioParamsSchema), usuariosController.getById);

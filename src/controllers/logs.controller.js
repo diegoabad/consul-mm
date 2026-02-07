@@ -43,23 +43,34 @@ const create = async (req, res, next) => {
 
 /**
  * GET /api/logs - Listar logs con filtros (solo administrador)
+ * Query: fecha_desde, fecha_hasta, origen, page (1-based), limit
  */
 const list = async (req, res, next) => {
   try {
-    const { fecha_desde, fecha_hasta, origen, limit, offset } = req.query;
+    const { fecha_desde, fecha_hasta, origen, page, limit } = req.query;
     const filters = {};
     if (fecha_desde) filters.fecha_desde = fecha_desde;
     if (fecha_hasta) filters.fecha_hasta = fecha_hasta;
     if (origen === 'front' || origen === 'back') filters.origen = origen;
-    if (limit) filters.limit = limit;
-    if (offset) filters.offset = offset;
+
+    const limitNum = Math.min(500, Math.max(1, parseInt(String(limit), 10) || 10));
+    const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
+    filters.limit = limitNum;
+    filters.offset = (pageNum - 1) * limitNum;
 
     const [rows, total] = await Promise.all([
       logModel.findAll(filters),
       logModel.count(filters),
     ]);
+    const totalPages = Math.ceil(total / limitNum) || 0;
 
-    return res.json(buildResponse(true, { logs: rows, total }));
+    return res.json(buildResponse(true, {
+      logs: rows,
+      total,
+      page: pageNum,
+      limit: limitNum,
+      totalPages,
+    }));
   } catch (error) {
     logger.error('Error en logs.controller list:', error);
     next(error);

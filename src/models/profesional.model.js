@@ -60,6 +60,72 @@ const findAll = async (filters = {}) => {
 };
 
 /**
+ * Listar profesionales con paginación y filtros (para Contratos y otros listados)
+ * @param {Object} filters - { page, limit, activo, bloqueado, especialidad, estado_pago, id (profesional_id), tipo_periodo_pago }
+ * @returns {Promise<{ rows: Array, total: number }>}
+ */
+const findAllPaginated = async (filters = {}) => {
+  try {
+    const { page = 1, limit = 10 } = filters;
+    const offset = (Math.max(1, page) - 1) * Math.min(100, Math.max(1, limit));
+    const limitVal = Math.min(100, Math.max(1, limit));
+
+    let where = ' WHERE 1=1';
+    const params = [];
+    let paramIndex = 1;
+
+    if (filters.activo !== undefined) {
+      where += ` AND u.activo = $${paramIndex++}`;
+      params.push(filters.activo);
+    }
+    if (filters.bloqueado !== undefined) {
+      where += ` AND p.bloqueado = $${paramIndex++}`;
+      params.push(filters.bloqueado);
+    }
+    if (filters.especialidad) {
+      where += ` AND p.especialidad ILIKE $${paramIndex++}`;
+      params.push(`%${filters.especialidad}%`);
+    }
+    if (filters.estado_pago) {
+      where += ` AND p.estado_pago = $${paramIndex++}`;
+      params.push(filters.estado_pago);
+    }
+    if (filters.id) {
+      where += ` AND p.id = $${paramIndex++}`;
+      params.push(filters.id);
+    }
+    if (filters.tipo_periodo_pago) {
+      where += ` AND COALESCE(p.tipo_periodo_pago, 'mensual') = $${paramIndex++}`;
+      params.push(filters.tipo_periodo_pago);
+    }
+
+    const fromClause = ` FROM profesionales p INNER JOIN usuarios u ON p.usuario_id = u.id ${where}`;
+    const countResult = await query(
+      `SELECT COUNT(*)::int AS total ${fromClause}`,
+      params
+    );
+    const total = countResult.rows[0]?.total ?? 0;
+
+    const dataParams = [...params, limitVal, offset];
+    const dataSql = `
+      SELECT p.id, p.usuario_id, p.matricula, p.especialidad,
+        p.estado_pago, p.bloqueado, p.razon_bloqueo,
+        p.fecha_ultimo_pago, p.fecha_inicio_contrato, p.monto_mensual, p.tipo_periodo_pago, p.observaciones,
+        p.fecha_creacion, p.fecha_actualizacion,
+        u.email, u.nombre, u.apellido, u.telefono, u.rol, u.activo AS usuario_activo
+      ${fromClause}
+      ORDER BY p.fecha_creacion DESC
+      LIMIT $${paramIndex++} OFFSET $${paramIndex}
+    `;
+    const dataResult = await query(dataSql, dataParams);
+    return { rows: dataResult.rows, total };
+  } catch (error) {
+    logger.error('Error en findAllPaginated profesionales:', error);
+    throw error;
+  }
+};
+
+/**
  * Buscar profesional por ID
  * @param {string} id - UUID del profesional
  * @returns {Promise<Object|null>} Profesional encontrado o null
@@ -308,6 +374,7 @@ const getBlocked = async () => {
 
 module.exports = {
   findAll,
+  findAllPaginated,
   findById,
   findByUserId,
   create,

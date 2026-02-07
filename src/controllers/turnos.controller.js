@@ -20,19 +20,20 @@ const { ESTADOS_TURNO } = require('../utils/constants');
 
 /**
  * Listar turnos con filtros.
- * Si el usuario es profesional, solo ve sus propios turnos (puede "sacar" sus turnos aunque el paciente no estuviera asignado antes; al crear turno se auto-asigna).
+ * Si se envían page y/o limit, devuelve respuesta paginada { data, total, page, limit, totalPages }.
+ * Si no, devuelve array (para agenda del día).
+ * Si el usuario es profesional, solo ve sus propios turnos.
  */
 const getAll = async (req, res, next) => {
   try {
-    const { profesional_id, paciente_id, estado, fecha_inicio, fecha_fin } = req.query;
+    const { profesional_id, paciente_id, estado, fecha_inicio, fecha_fin, page, limit } = req.query;
     const filters = {};
-    
     if (profesional_id) filters.profesional_id = profesional_id;
     if (paciente_id) filters.paciente_id = paciente_id;
     if (estado) filters.estado = estado;
     if (fecha_inicio) filters.fecha_inicio = fecha_inicio;
     if (fecha_fin) filters.fecha_fin = fecha_fin;
-    
+
     if (req.user.rol === 'profesional') {
       const profesional = await profesionalModel.findByUserId(req.user.id);
       if (!profesional) {
@@ -40,9 +41,23 @@ const getAll = async (req, res, next) => {
       }
       filters.profesional_id = profesional.id;
     }
-    
+
+    const usePagination = page !== undefined || limit !== undefined;
+    if (usePagination) {
+      filters.page = page ? parseInt(String(page), 10) : 1;
+      filters.limit = limit ? parseInt(String(limit), 10) : 10;
+      const { rows, total } = await turnoModel.findAllPaginated(filters);
+      const totalPages = Math.ceil(total / filters.limit) || 0;
+      return res.json(buildResponse(true, {
+        data: rows,
+        total,
+        page: filters.page,
+        limit: filters.limit,
+        totalPages
+      }, 'Turnos obtenidos exitosamente'));
+    }
+
     const turnos = await turnoModel.findAll(filters);
-    
     res.json(buildResponse(true, turnos, 'Turnos obtenidos exitosamente'));
   } catch (error) {
     logger.error('Error en getAll turnos:', error);

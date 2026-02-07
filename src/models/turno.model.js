@@ -91,6 +91,82 @@ const findAll = async (filters = {}) => {
 };
 
 /**
+ * Listar turnos con paginación (mismos filtros que findAll)
+ * Para historial de paciente: orden DESC (más recientes primero)
+ * @param {Object} filters - profesional_id, paciente_id, estado, fecha_inicio, fecha_fin, page, limit
+ * @returns {Promise<{ rows: Array, total: number }>}
+ */
+const findAllPaginated = async (filters = {}) => {
+  try {
+    const { page = 1, limit = 10 } = filters;
+    const offset = (Math.max(1, page) - 1) * Math.min(100, Math.max(1, limit));
+    const limitVal = Math.min(100, Math.max(1, limit));
+
+    let where = ' WHERE 1=1';
+    const params = [];
+    let paramIndex = 1;
+
+    if (filters.profesional_id) {
+      where += ` AND t.profesional_id = $${paramIndex++}`;
+      params.push(filters.profesional_id);
+    }
+    if (filters.paciente_id) {
+      where += ` AND t.paciente_id = $${paramIndex++}`;
+      params.push(filters.paciente_id);
+    }
+    if (filters.estado) {
+      where += ` AND t.estado = $${paramIndex++}`;
+      params.push(filters.estado);
+    }
+    if (filters.fecha_inicio) {
+      where += ` AND t.fecha_hora_inicio >= $${paramIndex++}`;
+      params.push(filters.fecha_inicio);
+    }
+    if (filters.fecha_fin) {
+      where += ` AND t.fecha_hora_inicio <= $${paramIndex++}`;
+      params.push(filters.fecha_fin);
+    }
+
+    const fromClause = `
+      FROM turnos t
+      INNER JOIN profesionales p ON t.profesional_id = p.id
+      INNER JOIN usuarios u_prof ON p.usuario_id = u_prof.id
+      INNER JOIN pacientes pac ON t.paciente_id = pac.id
+      ${where}
+    `;
+    const countResult = await query(
+      `SELECT COUNT(*)::int as total FROM turnos t ${where}`,
+      params
+    );
+    const total = countResult.rows[0]?.total ?? 0;
+
+    const dataParams = [...params, limitVal, offset];
+    const dataSql = `
+      SELECT 
+        t.id, t.profesional_id, t.paciente_id, t.fecha_hora_inicio::text as fecha_hora_inicio, t.fecha_hora_fin::text as fecha_hora_fin,
+        t.estado, t.sobreturno, t.motivo, t.cancelado_por, t.razon_cancelacion,
+        t.fecha_creacion, t.fecha_actualizacion,
+        p.matricula, p.especialidad as profesional_especialidad,
+        u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido, u_prof.email as profesional_email,
+        pac.nombre as paciente_nombre, pac.apellido as paciente_apellido, pac.dni as paciente_dni, pac.telefono as paciente_telefono, pac.email as paciente_email
+      ${fromClause}
+      ORDER BY t.fecha_hora_inicio DESC
+      LIMIT $${paramIndex++} OFFSET $${paramIndex}
+    `;
+    const dataResult = await query(dataSql, dataParams);
+    const rows = dataResult.rows.map((r) => ({
+      ...r,
+      fecha_hora_inicio: toISOUTC(r.fecha_hora_inicio),
+      fecha_hora_fin: toISOUTC(r.fecha_hora_fin)
+    }));
+    return { rows, total };
+  } catch (error) {
+    logger.error('Error en findAllPaginated turnos:', error);
+    throw error;
+  }
+};
+
+/**
  * Buscar turno por ID
  * @param {string} id - UUID del turno
  * @returns {Promise<Object|null>} Turno encontrado o null
@@ -487,6 +563,7 @@ const deleteById = async (id) => {
 
 module.exports = {
   findAll,
+  findAllPaginated,
   findById,
   findByProfesional,
   findByPaciente,

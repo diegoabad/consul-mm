@@ -35,6 +35,57 @@ const findAll = async (filters = {}) => {
   }
 };
 
+/**
+ * Listar usuarios con paginación y filtros (rol, activo, búsqueda q)
+ * @param {Object} filters - { rol, activo, q, page, limit }
+ * @returns {Promise<{ rows: Array, total: number }>}
+ */
+const findAllPaginated = async (filters = {}) => {
+  try {
+    const { page = 1, limit = 10 } = filters;
+    const offset = (Math.max(1, page) - 1) * Math.min(100, Math.max(1, limit));
+    const limitVal = Math.min(100, Math.max(1, limit));
+
+    let where = ' WHERE 1=1';
+    const params = [];
+    let paramIndex = 1;
+
+    if (filters.rol) {
+      where += ` AND rol = $${paramIndex++}`;
+      params.push(filters.rol);
+    }
+    if (filters.activo !== undefined) {
+      where += ` AND activo = $${paramIndex++}`;
+      params.push(filters.activo);
+    }
+    if (filters.q && String(filters.q).trim()) {
+      const term = `%${String(filters.q).trim()}%`;
+      where += ` AND (nombre ILIKE $${paramIndex} OR apellido ILIKE $${paramIndex} OR email ILIKE $${paramIndex})`;
+      params.push(term);
+      paramIndex += 1;
+    }
+
+    const countResult = await query(
+      'SELECT COUNT(*)::int as total FROM usuarios ' + where,
+      params
+    );
+    const total = countResult.rows[0]?.total ?? 0;
+
+    const dataParams = [...params, limitVal, offset];
+    const dataSql = `
+      SELECT id, email, nombre, apellido, telefono, rol, activo, fecha_creacion, fecha_actualizacion
+      FROM usuarios ${where}
+      ORDER BY fecha_creacion DESC
+      LIMIT $${paramIndex++} OFFSET $${paramIndex}
+    `;
+    const dataResult = await query(dataSql, dataParams);
+    return { rows: dataResult.rows, total };
+  } catch (error) {
+    logger.error('Error en findAllPaginated usuarios:', error);
+    throw error;
+  }
+};
+
 const findById = async (id) => {
   try {
     const result = await query(
@@ -215,6 +266,7 @@ const updatePassword = async (id, newPassword) => {
 
 module.exports = {
   findAll,
+  findAllPaginated,
   findById,
   findByEmail,
   create,

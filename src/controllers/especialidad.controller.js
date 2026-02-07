@@ -3,15 +3,36 @@ const { buildResponse } = require('../utils/response');
 const logger = require('../utils/logger');
 
 /**
- * Obtener todas las especialidades activas
+ * Obtener todas las especialidades (o paginado si se envían page/limit)
  */
 const getAll = async (req, res, next) => {
   try {
-    const { includeInactive } = req.query;
+    const { includeInactive, page, limit, q } = req.query;
+    const hasPagination = page !== undefined || limit !== undefined;
+
+    if (hasPagination) {
+      const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(String(limit), 10) || 10));
+      const filters = {
+        page: pageNum,
+        limit: limitNum,
+        includeInactive: includeInactive === 'true',
+        q: q && String(q).trim() ? String(q).trim() : undefined,
+      };
+      const { rows, total } = await especialidadModel.findAllPaginated(filters);
+      const totalPages = Math.ceil(total / limitNum) || 0;
+      return res.json(buildResponse(true, {
+        data: rows,
+        total,
+        page: pageNum,
+        limit: limitNum,
+        totalPages,
+      }));
+    }
+
     const especialidades = includeInactive === 'true'
       ? await especialidadModel.findAllIncludingInactive()
       : await especialidadModel.findAll();
-    
     res.json(buildResponse(true, especialidades));
   } catch (error) {
     logger.error('Error en getAll especialidades:', error);

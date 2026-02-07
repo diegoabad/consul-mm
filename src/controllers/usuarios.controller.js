@@ -11,19 +11,30 @@ const logger = require('../utils/logger');
 const { buildResponse, normalizeToLowerCase } = require('../utils/helpers');
 
 /**
- * Listar todos los usuarios
+ * Listar usuarios con paginación y filtros (rol, activo, búsqueda q)
+ * Query: page, limit, q, rol, activo
  */
 const getAll = async (req, res, next) => {
   try {
-    const { rol, activo } = req.query;
-    const filters = {};
-    
+    const { rol, activo, q, page, limit } = req.query;
+    const filters = {
+      page: page ? parseInt(String(page), 10) : 1,
+      limit: limit ? parseInt(String(limit), 10) : 10
+    };
     if (rol) filters.rol = rol;
     if (activo !== undefined) filters.activo = activo === 'true';
-    
-    const usuarios = await usuarioModel.findAll(filters);
-    
-    res.json(buildResponse(true, usuarios, 'Usuarios obtenidos exitosamente'));
+    if (q && String(q).trim()) filters.q = String(q).trim();
+
+    const { rows, total } = await usuarioModel.findAllPaginated(filters);
+    const totalPages = Math.ceil(total / filters.limit) || 0;
+
+    res.json(buildResponse(true, {
+      data: rows,
+      total,
+      page: filters.page,
+      limit: filters.limit,
+      totalPages
+    }, 'Usuarios obtenidos exitosamente'));
   } catch (error) {
     logger.error('Error en getAll usuarios:', error);
     next(error);

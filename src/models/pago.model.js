@@ -63,6 +63,70 @@ const findAll = async (filters = {}) => {
 };
 
 /**
+ * Listar pagos con paginación y filtros
+ * @param {Object} filters - { page, limit, profesional_id, estado, periodo_desde, periodo_hasta }
+ * @returns {Promise<{ rows: Array, total: number }>}
+ */
+const findAllPaginated = async (filters = {}) => {
+  try {
+    const page = Math.max(1, parseInt(filters.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(filters.limit, 10) || 10));
+    const offset = (page - 1) * limit;
+
+    let where = ' WHERE 1=1';
+    const params = [];
+    let paramIndex = 1;
+
+    if (filters.profesional_id) {
+      where += ` AND p.profesional_id = $${paramIndex++}`;
+      params.push(filters.profesional_id);
+    }
+    if (filters.estado) {
+      where += ` AND p.estado = $${paramIndex++}`;
+      params.push(filters.estado);
+    }
+    if (filters.periodo_desde) {
+      where += ` AND p.periodo >= $${paramIndex++}`;
+      params.push(filters.periodo_desde);
+    }
+    if (filters.periodo_hasta) {
+      where += ` AND p.periodo <= $${paramIndex++}`;
+      params.push(filters.periodo_hasta);
+    }
+
+    const fromClause = `
+      FROM pagos_profesionales p
+      INNER JOIN profesionales prof ON p.profesional_id = prof.id
+      INNER JOIN usuarios u_prof ON prof.usuario_id = u_prof.id
+      ${where}
+    `;
+    const countResult = await query(
+      `SELECT COUNT(*)::int AS total ${fromClause}`,
+      params
+    );
+    const total = countResult.rows[0]?.total ?? 0;
+
+    const dataSql = `
+      SELECT
+        p.id, p.profesional_id, p.periodo, p.monto, p.fecha_pago,
+        p.estado, p.metodo_pago, p.comprobante_url, p.observaciones,
+        p.fecha_creacion, p.fecha_actualizacion,
+        prof.matricula, prof.especialidad, prof.tipo_periodo_pago as profesional_tipo_periodo_pago,
+        u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido,
+        u_prof.email as profesional_email
+      ${fromClause}
+      ORDER BY p.periodo DESC, p.fecha_creacion DESC
+      LIMIT $${paramIndex++} OFFSET $${paramIndex}
+    `;
+    const dataResult = await query(dataSql, [...params, limit, offset]);
+    return { rows: dataResult.rows, total };
+  } catch (error) {
+    logger.error('Error en findAllPaginated pagos:', error);
+    throw error;
+  }
+};
+
+/**
  * Buscar pago por ID
  * @param {string} id - UUID del pago
  * @returns {Promise<Object|null>} Pago encontrado o null
@@ -329,6 +393,7 @@ const deleteById = async (id) => {
 
 module.exports = {
   findAll,
+  findAllPaginated,
   findById,
   findByProfesional,
   getPending,

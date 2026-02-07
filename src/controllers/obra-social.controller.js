@@ -3,15 +3,36 @@ const { buildResponse } = require('../utils/response');
 const logger = require('../utils/logger');
 
 /**
- * Obtener todas las obras sociales activas
+ * Obtener todas las obras sociales (o paginado si se envían page/limit)
  */
 const getAll = async (req, res, next) => {
   try {
-    const { includeInactive } = req.query;
+    const { includeInactive, page, limit, q } = req.query;
+    const hasPagination = page !== undefined || limit !== undefined;
+
+    if (hasPagination) {
+      const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(String(limit), 10) || 10));
+      const filters = {
+        page: pageNum,
+        limit: limitNum,
+        includeInactive: includeInactive === 'true',
+        q: q && String(q).trim() ? String(q).trim() : undefined,
+      };
+      const { rows, total } = await obraSocialModel.findAllPaginated(filters);
+      const totalPages = Math.ceil(total / limitNum) || 0;
+      return res.json(buildResponse(true, {
+        data: rows,
+        total,
+        page: pageNum,
+        limit: limitNum,
+        totalPages,
+      }));
+    }
+
     const obrasSociales = includeInactive === 'true'
       ? await obraSocialModel.findAllIncludingInactive()
       : await obraSocialModel.findAll();
-    
     res.json(buildResponse(true, obrasSociales));
   } catch (error) {
     logger.error('Error en getAll obras_sociales:', error);

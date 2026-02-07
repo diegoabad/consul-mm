@@ -58,7 +58,9 @@ const pagoQuerySchema = Joi.object({
   profesional_id: Joi.string().uuid().optional(),
   estado: Joi.string().valid(...Object.values(ESTADOS_PAGO)).optional(),
   periodo_desde: Joi.date().optional(),
-  periodo_hasta: Joi.date().optional()
+  periodo_hasta: Joi.date().optional(),
+  page: Joi.number().integer().min(1).optional(),
+  limit: Joi.number().integer().min(1).max(100).optional()
 });
 
 module.exports = {

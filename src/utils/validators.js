@@ -19,11 +19,18 @@ const validateDNI = () => {
 };
 
 /**
- * Validador de teléfono argentino
+ * Validador de teléfono: solo exige más de 5 dígitos (mínimo 6), sin validar formato.
  */
 const validatePhone = () => {
-  return Joi.string().pattern(/^(\+54|0)?[0-9]{10,11}$/).messages({
-    'string.pattern.base': 'El teléfono debe tener un formato válido',
+  return Joi.string().custom((value, helpers) => {
+    if (value == null || value === '') return value;
+    const digits = String(value).replace(/\D/g, '');
+    if (digits.length < 6) {
+      return helpers.error('any.invalid');
+    }
+    return value;
+  }, 'al menos 6 dígitos').messages({
+    'any.invalid': 'El teléfono debe tener al menos 6 números',
     'string.empty': 'El teléfono no puede estar vacío',
     'string.base': 'El teléfono debe ser un texto'
   });

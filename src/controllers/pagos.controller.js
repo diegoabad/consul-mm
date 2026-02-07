@@ -38,20 +38,40 @@ function normalizePeriodoToYYYYMMDD(value) {
 }
 
 /**
- * Listar pagos con filtros
+ * Listar pagos con filtros. Si se envían page o limit, devuelve respuesta paginada.
  */
 const getAll = async (req, res, next) => {
   try {
-    const { profesional_id, estado, periodo_desde, periodo_hasta } = req.query;
+    const { profesional_id, estado, periodo_desde, periodo_hasta, page, limit } = req.query;
+    const hasPagination = page !== undefined || limit !== undefined;
+
+    if (hasPagination) {
+      const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(String(limit), 10) || 10));
+      const filters = { page: pageNum, limit: limitNum };
+      if (profesional_id) filters.profesional_id = profesional_id;
+      if (estado) filters.estado = estado;
+      if (periodo_desde) filters.periodo_desde = normalizePeriodoToYYYYMMDD(periodo_desde);
+      if (periodo_hasta) filters.periodo_hasta = normalizePeriodoToYYYYMMDD(periodo_hasta);
+
+      const { rows, total } = await pagoModel.findAllPaginated(filters);
+      const totalPages = Math.ceil(total / limitNum) || 0;
+      return res.json(buildResponse(true, {
+        data: rows,
+        total,
+        page: pageNum,
+        limit: limitNum,
+        totalPages,
+      }, 'Pagos obtenidos exitosamente'));
+    }
+
     const filters = {};
-    
     if (profesional_id) filters.profesional_id = profesional_id;
     if (estado) filters.estado = estado;
     if (periodo_desde) filters.periodo_desde = normalizePeriodoToYYYYMMDD(periodo_desde);
     if (periodo_hasta) filters.periodo_hasta = normalizePeriodoToYYYYMMDD(periodo_hasta);
-    
+
     const pagos = await pagoModel.findAll(filters);
-    
     res.json(buildResponse(true, pagos, 'Pagos obtenidos exitosamente'));
   } catch (error) {
     logger.error('Error en getAll pagos:', error);
