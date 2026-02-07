@@ -19,6 +19,41 @@ const fs = require('fs');
 const UPLOADS_DIR = path.join(__dirname, '../../uploads');
 
 /**
+ * Filtra la lista de archivos para excluir aquellos cuyo archivo físico ya no existe
+ * (ej. borrados manualmente del disco). Opcionalmente elimina esos registros huérfanos de la DB.
+ * @param {Array} archivos - Lista de archivos desde la DB
+ * @returns {Promise<Array>} Lista solo con archivos que existen en disco
+ */
+async function filtrarArchivosExistentes(archivos) {
+  if (!archivos || archivos.length === 0) return archivos;
+  const baseDir = path.join(__dirname, '../..');
+  const validos = [];
+  for (const a of archivos) {
+    if (!a.url_archivo) {
+      try {
+        await archivoModel.delete(a.id);
+        logger.info('Registro de archivo huérfano eliminado (sin url):', { id: a.id });
+      } catch (err) {
+        logger.error('Error eliminando registro huérfano:', err);
+      }
+      continue;
+    }
+    const filePath = path.join(baseDir, a.url_archivo.replace(/^\//, ''));
+    if (fs.existsSync(filePath)) {
+      validos.push(a);
+    } else {
+      try {
+        await archivoModel.delete(a.id);
+        logger.info('Registro de archivo huérfano eliminado (archivo físico no existe):', { id: a.id, url: a.url_archivo });
+      } catch (err) {
+        logger.error('Error eliminando registro huérfano:', err);
+      }
+    }
+  }
+  return validos;
+}
+
+/**
  * Listar archivos con filtros.
  * Si el usuario es profesional, solo ve sus propios archivos.
  */
@@ -38,8 +73,9 @@ const getAll = async (req, res, next) => {
       filters.profesional_id = profesional.id;
     }
     
-    const archivos = await archivoModel.findAll(filters);
-    
+    let archivos = await archivoModel.findAll(filters);
+    archivos = await filtrarArchivosExistentes(archivos);
+
     res.json(buildResponse(true, archivos, 'Archivos obtenidos exitosamente'));
   } catch (error) {
     logger.error('Error en getAll archivos:', error);
@@ -97,12 +133,14 @@ const getByPaciente = async (req, res, next) => {
       if (!pacienteIds.includes(id)) {
         return res.status(403).json(buildResponse(false, null, 'No tiene asignado este paciente'));
       }
-      const archivos = await archivoModel.findAll({ paciente_id: id, profesional_id: profesional.id });
+      let archivos = await archivoModel.findAll({ paciente_id: id, profesional_id: profesional.id });
+      archivos = await filtrarArchivosExistentes(archivos);
       return res.json(buildResponse(true, archivos, 'Archivos del paciente obtenidos exitosamente'));
     }
-    
+
     // Administrador y secretaria: todos los archivos del paciente
-    const archivos = await archivoModel.findByPaciente(id);
+    let archivos = await archivoModel.findByPaciente(id);
+    archivos = await filtrarArchivosExistentes(archivos);
     res.json(buildResponse(true, archivos, 'Archivos del paciente obtenidos exitosamente'));
   } catch (error) {
     logger.error('Error en getByPaciente archivos:', error);

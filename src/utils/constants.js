@@ -140,6 +140,7 @@ const PERMISOS_POR_ROL = {
     'turnos.crear',
     'turnos.leer',
     'turnos.actualizar',
+    'turnos.eliminar',
     'turnos.confirmar',
     'turnos.completar',
     'agenda.leer',
