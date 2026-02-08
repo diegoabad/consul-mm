@@ -35,7 +35,8 @@ const createTurnoSchema = Joi.object({
     }),
   estado: Joi.string().valid(...Object.values(ESTADOS_TURNO)).default(ESTADOS_TURNO.PENDIENTE),
   sobreturno: Joi.boolean().optional().default(false),
-  motivo: Joi.string().optional().allow(null, '')
+  motivo: Joi.string().optional().allow(null, ''),
+  permiso_fuera_agenda: Joi.boolean().optional().default(false)
 });
 
 const updateTurnoSchema = Joi.object({

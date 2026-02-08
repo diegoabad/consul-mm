@@ -146,6 +146,7 @@ const PERMISOS_POR_ROL = {
     'agenda.leer',
     'agenda.crear',
     'agenda.actualizar',
+    'agenda.eliminar',
     'agenda.bloques.crear',
     'agenda.bloques.eliminar',
     'agenda.excepciones.crear',

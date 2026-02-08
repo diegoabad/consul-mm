@@ -234,10 +234,12 @@ const create = async (agendaData) => {
       hora_fin,
       duracion_turno_minutos = 30,
       activo = true,
-      vigencia_desde: vigenciaDesdeParam
+      vigencia_desde: vigenciaDesdeParam,
+      vigencia_hasta: vigenciaHastaParam
     } = agendaData;
 
     const hasVigenciaDesde = vigenciaDesdeParam != null && String(vigenciaDesdeParam).trim() !== '';
+    const hasVigenciaHasta = vigenciaHastaParam != null && String(vigenciaHastaParam).trim() !== '';
     const cols = ['profesional_id', 'dia_semana', 'hora_inicio', 'hora_fin', 'duracion_turno_minutos', 'activo'];
     const placeholders = [1, 2, 3, 4, 5, 6];
     const values = [profesional_id, dia_semana, hora_inicio, hora_fin, duracion_turno_minutos, activo];
@@ -245,6 +247,11 @@ const create = async (agendaData) => {
       cols.push('vigencia_desde');
       placeholders.push(values.length + 1);
       values.push(String(vigenciaDesdeParam).trim().slice(0, 10));
+    }
+    if (hasVigenciaHasta) {
+      cols.push('vigencia_hasta');
+      placeholders.push(values.length + 1);
+      values.push(String(vigenciaHastaParam).trim().slice(0, 10));
     }
 
     const result = await query(
@@ -296,6 +303,16 @@ const update = async (id, agendaData) => {
     if (agendaData.activo !== undefined) {
       fields.push(`activo = $${paramIndex++}`);
       values.push(agendaData.activo);
+    }
+    
+    if (agendaData.vigencia_desde !== undefined) {
+      fields.push(`vigencia_desde = $${paramIndex++}`);
+      values.push(agendaData.vigencia_desde == null || String(agendaData.vigencia_desde).trim() === '' ? null : String(agendaData.vigencia_desde).trim().slice(0, 10));
+    }
+    
+    if (agendaData.vigencia_hasta !== undefined) {
+      fields.push(`vigencia_hasta = $${paramIndex++}`);
+      values.push(agendaData.vigencia_hasta == null || String(agendaData.vigencia_hasta).trim() === '' ? null : String(agendaData.vigencia_hasta).trim().slice(0, 10));
     }
     
     if (fields.length === 0) {
@@ -374,18 +391,26 @@ const deactivate = async (id) => {
 };
 
 /**
- * Cerrar periodo vigente de un profesional (set vigencia_hasta = hoy en todas las config vigentes)
+ * Cerrar periodo vigente de un profesional (set vigencia_hasta en todas las config vigentes)
  * @param {string} profesionalId - UUID del profesional
+ * @param {string} [vigenciaHastaDate] - YYYY-MM-DD hasta la que rige la vigencia actual. Si la nueva agenda empieza el 1/3, pasar 'YYYY-MM-DD' del día anterior (ej. 29/2) para que febrero siga aplicando todo el mes. Si no se pasa, se usa CURRENT_DATE (cierre “desde hoy”).
  * @returns {Promise<number>} Cantidad de filas actualizadas
  */
-const closeVigenciaForProfesional = async (profesionalId) => {
+const closeVigenciaForProfesional = async (profesionalId, vigenciaHastaDate = null) => {
   try {
+    const params = [profesionalId];
+    const setClause = vigenciaHastaDate && String(vigenciaHastaDate).trim()
+      ? 'SET vigencia_hasta = $2'
+      : 'SET vigencia_hasta = CURRENT_DATE';
+    if (vigenciaHastaDate && String(vigenciaHastaDate).trim()) {
+      params.push(String(vigenciaHastaDate).trim().slice(0, 10));
+    }
     const result = await query(
       `UPDATE configuracion_agenda 
-       SET vigencia_hasta = CURRENT_DATE 
+       ${setClause}
        WHERE profesional_id = $1 AND vigencia_hasta IS NULL
        RETURNING id`,
-      [profesionalId]
+      params
     );
     return result.rows.length;
   } catch (error) {
@@ -398,14 +423,30 @@ const closeVigenciaForProfesional = async (profesionalId) => {
  * Guardar horarios de la semana: cierra periodo vigente y crea nuevas configuraciones
  * @param {string} profesionalId - UUID del profesional
  * @param {Array<{dia_semana: number, hora_inicio: string, hora_fin: string}>} horarios - Lista de días con horario (solo los que atiende)
- * @param {string} [fechaDesde] - YYYY-MM-DD desde la que rige la nueva agenda (ej. "hoy" del usuario); si no se pasa, se usa CURRENT_DATE del servidor
+ * @param {string} [fechaDesde] - YYYY-MM-DD desde la que rige la nueva agenda
+ * @param {number} [duracionTurnoMinutos] - Duración de cada turno en minutos (default 30)
+ * @param {string} [fechaHasta] - YYYY-MM-DD hasta la que rige (opcional); si no se pasa, queda vigente (sin fin)
  * @returns {Promise<Array>} Configuraciones creadas
  */
-const guardarHorariosSemana = async (profesionalId, horarios, fechaDesde = null) => {
+const guardarHorariosSemana = async (profesionalId, horarios, fechaDesde = null, duracionTurnoMinutos = 30, fechaHasta = null) => {
   try {
-    await closeVigenciaForProfesional(profesionalId);
     const normalizeTime = (t) => (t && t.length === 5 ? t + ':00' : t);
     const vigenciaDesde = (fechaDesde != null && String(fechaDesde).trim() !== '') ? String(fechaDesde).trim().slice(0, 10) : null;
+    // Cerrar la vigencia anterior hasta (vigencia_desde de la nueva - 1 día): la anterior termina el día antes de que empiece la nueva. “vieja” sigue aplicando todo su mes).
+    let vigenciaHastaCierre = null;
+    if (vigenciaDesde) {
+      const [yD, mD, dD] = vigenciaDesde.split('-').map(Number);
+      const diaAnterior = new Date(yD, mD - 1, dD - 1);
+      const y = diaAnterior.getFullYear();
+      const m = String(diaAnterior.getMonth() + 1).padStart(2, '0');
+      const d = String(diaAnterior.getDate()).padStart(2, '0');
+      vigenciaHastaCierre = `${y}-${m}-${d}`;
+    }
+    await closeVigenciaForProfesional(profesionalId, vigenciaHastaCierre);
+    const vigenciaHasta = (fechaHasta != null && String(fechaHasta).trim() !== '') ? String(fechaHasta).trim().slice(0, 10) : null;
+    const duracion = (duracionTurnoMinutos != null && Number.isInteger(duracionTurnoMinutos) && duracionTurnoMinutos >= 5 && duracionTurnoMinutos <= 480)
+      ? duracionTurnoMinutos
+      : 30;
     const created = [];
     for (const h of horarios) {
       const row = await create({
@@ -413,9 +454,10 @@ const guardarHorariosSemana = async (profesionalId, horarios, fechaDesde = null)
         dia_semana: h.dia_semana,
         hora_inicio: normalizeTime(h.hora_inicio),
         hora_fin: normalizeTime(h.hora_fin),
-        duracion_turno_minutos: 30,
+        duracion_turno_minutos: duracion,
         activo: true,
         ...(vigenciaDesde && { vigencia_desde: vigenciaDesde }),
+        ...(vigenciaHasta && { vigencia_hasta: vigenciaHasta }),
       });
       created.push(row);
     }

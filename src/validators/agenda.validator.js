@@ -87,7 +87,11 @@ const updateAgendaSchema = Joi.object({
       'number.min': 'La duracion_turno_minutos debe ser al menos 5 minutos',
       'number.max': 'La duracion_turno_minutos no puede exceder 480 minutos (8 horas)'
     }),
-  activo: Joi.boolean().optional()
+  activo: Joi.boolean().optional(),
+  vigencia_desde: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).optional().allow(null, '')
+    .messages({ 'string.pattern.base': 'vigencia_desde debe ser YYYY-MM-DD' }),
+  vigencia_hasta: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).optional().allow(null, '')
+    .messages({ 'string.pattern.base': 'vigencia_hasta debe ser YYYY-MM-DD' })
 }).custom((value, helpers) => {
   // Validar que hora_fin sea posterior a hora_inicio si ambas están presentes
   if (value.hora_inicio && value.hora_fin) {
@@ -148,7 +152,15 @@ const guardarHorariosSemanaSchema = Joi.object({
     .required()
     .min(0),
   fecha_desde: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).optional()
-    .messages({ 'string.pattern.base': 'fecha_desde debe ser YYYY-MM-DD' })
+    .messages({ 'string.pattern.base': 'fecha_desde debe ser YYYY-MM-DD' }),
+  fecha_hasta: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).optional().allow(null, '')
+    .messages({ 'string.pattern.base': 'fecha_hasta debe ser YYYY-MM-DD' }),
+  duracion_turno_minutos: Joi.number().integer().min(5).max(480).optional().default(30)
+    .messages({
+      'number.base': 'La duracion_turno_minutos debe ser un número',
+      'number.min': 'La duración del turno debe ser al menos 5 minutos',
+      'number.max': 'La duración del turno no puede exceder 480 minutos (8 horas)'
+    })
 });
 
 // ============================================

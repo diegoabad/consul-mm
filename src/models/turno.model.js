@@ -12,10 +12,11 @@ const { ESTADOS_TURNO } = require('../utils/constants');
 /** Devuelve fecha/hora como texto UTC "YYYY-MM-DD HH:mm:ss" para guardar en TIMESTAMP sin TZ */
 function dateToUTCString(d) {
   const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
+  const date = d instanceof Date ? d : new Date(d);
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}`;
 }
 
-/** Convierte valor de timestamp (string "YYYY-MM-DD HH:mm:ss" en UTC o Date) a ISO UTC para el cliente */
+/** Convierte valor de timestamp (string "YYYY-MM-DD HH:mm:ss" o Date) a ISO UTC para el cliente */
 function toISOUTC(val) {
   if (val == null) return val;
   const s = typeof val === 'string' ? val.trim() : '';
@@ -65,12 +66,14 @@ const findAll = async (filters = {}) => {
       params.push(filters.estado);
     }
     
-    if (filters.fecha_inicio) {
+    // Rango por día: columna sin TZ se interpreta como UTC; comparar como timestamptz.
+    if (filters.fecha_inicio && filters.fecha_fin) {
+      sql += ` AND (t.fecha_hora_inicio AT TIME ZONE 'UTC') >= $${paramIndex++}::timestamptz AND (t.fecha_hora_inicio AT TIME ZONE 'UTC') <= $${paramIndex++}::timestamptz`;
+      params.push(filters.fecha_inicio, filters.fecha_fin);
+    } else if (filters.fecha_inicio) {
       sql += ` AND t.fecha_hora_inicio >= $${paramIndex++}`;
       params.push(filters.fecha_inicio);
-    }
-    
-    if (filters.fecha_fin) {
+    } else if (filters.fecha_fin) {
       sql += ` AND t.fecha_hora_inicio <= $${paramIndex++}`;
       params.push(filters.fecha_fin);
     }
@@ -385,9 +388,8 @@ const create = async (turnoData) => {
       sobreturno = false,
       motivo
     } = turnoData;
-    // Guardar siempre en UTC como "YYYY-MM-DD HH:mm:ss" para no depender de la zona del servidor
-    const inicioStr = fecha_hora_inicio instanceof Date ? dateToUTCString(fecha_hora_inicio) : fecha_hora_inicio;
-    const finStr = fecha_hora_fin instanceof Date ? dateToUTCString(fecha_hora_fin) : fecha_hora_fin;
+    const inicioStr = fecha_hora_inicio instanceof Date ? dateToUTCString(fecha_hora_inicio) : dateToUTCString(new Date(fecha_hora_inicio));
+    const finStr = fecha_hora_fin instanceof Date ? dateToUTCString(fecha_hora_fin) : dateToUTCString(new Date(fecha_hora_fin));
 
     const result = await query(
       `INSERT INTO turnos (
@@ -434,7 +436,12 @@ const update = async (id, turnoData) => {
     for (const field of allowedFields) {
       if (turnoData[field] !== undefined) {
         updates.push(`${field} = $${paramIndex++}`);
-        params.push(turnoData[field]);
+        const val = turnoData[field];
+        if (field === 'fecha_hora_inicio' || field === 'fecha_hora_fin') {
+          params.push(val instanceof Date ? dateToUTCString(val) : dateToUTCString(new Date(val)));
+        } else {
+          params.push(val);
+        }
       }
     }
     

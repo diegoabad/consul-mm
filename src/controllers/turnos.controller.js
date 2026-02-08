@@ -194,7 +194,8 @@ const create = async (req, res, next) => {
       fecha_hora_fin,
       estado,
       sobreturno,
-      motivo
+      motivo,
+      permiso_fuera_agenda
     } = req.body;
     
     // Verificar que el profesional existe y no está bloqueado
@@ -217,12 +218,15 @@ const create = async (req, res, next) => {
       return res.status(400).json(buildResponse(false, null, 'No se pueden crear turnos para pacientes inactivos'));
     }
     
-    // Verificar que el profesional atiende ese día y horario: agenda semanal vigente O día puntual (excepción)
+    // Verificar que el profesional atiende ese día y horario: agenda semanal vigente O día puntual (excepción).
+    // Si permiso_fuera_agenda es true (usuario confirmó en el front "turno fuera de horario"), se permite igual.
     const fechaHoraInicio = new Date(fecha_hora_inicio);
-    const cubiertoPorAgenda = await agendaModel.vigentConfigCoversDateTime(profesional_id, fechaHoraInicio);
-    const cubiertoPorExcepcion = await excepcionAgendaModel.coversDateTime(profesional_id, fechaHoraInicio);
-    if (!cubiertoPorAgenda && !cubiertoPorExcepcion) {
-      return res.status(400).json(buildResponse(false, null, 'No se pueden crear turnos en días u horarios en que el profesional no atiende'));
+    if (!permiso_fuera_agenda) {
+      const cubiertoPorAgenda = await agendaModel.vigentConfigCoversDateTime(profesional_id, fechaHoraInicio);
+      const cubiertoPorExcepcion = await excepcionAgendaModel.coversDateTime(profesional_id, fechaHoraInicio);
+      if (!cubiertoPorAgenda && !cubiertoPorExcepcion) {
+        return res.status(400).json(buildResponse(false, null, 'No se pueden crear turnos en días u horarios en que el profesional no atiende'));
+      }
     }
     
     // No permitir que el mismo paciente tenga dos turnos en el mismo horario (misma agenda)

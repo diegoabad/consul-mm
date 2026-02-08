@@ -94,7 +94,7 @@ const getProfesionalIdSiProfesional = async (userId, rol) => {
 const guardarHorariosSemana = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { horarios, fecha_desde: fechaDesde } = req.body;
+    const { horarios, fecha_desde: fechaDesde, duracion_turno_minutos: duracionTurnoMinutos } = req.body;
     const miProfesionalId = await getProfesionalIdSiProfesional(req.user.id, req.user.rol);
     if (miProfesionalId !== null && miProfesionalId !== id) {
       return res.status(403).json(buildResponse(false, null, 'No tiene permisos para modificar la agenda de otro profesional'));
@@ -107,7 +107,7 @@ const guardarHorariosSemana = async (req, res, next) => {
       return res.status(400).json(buildResponse(false, null, 'No se puede modificar la agenda de un profesional bloqueado'));
     }
     
-    const created = await agendaModel.guardarHorariosSemana(id, horarios, fechaDesde);
+    const created = await agendaModel.guardarHorariosSemana(id, horarios, fechaDesde, duracionTurnoMinutos);
     
     res.status(201).json(buildResponse(true, created, 'Horarios de la semana guardados correctamente'));
   } catch (error) {

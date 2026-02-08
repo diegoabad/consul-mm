@@ -116,7 +116,7 @@ const sendTurnoConfirmation = async (turnoData, pacienteEmail) => {
     profesional_nombre: turnoData.profesional_nombre && turnoData.profesional_apellido
       ? `${turnoData.profesional_nombre} ${turnoData.profesional_apellido}`.trim()
       : (turnoData.profesional_nombre || 'N/A'),
-    profesional_especialidad: turnoData.especialidad || 'N/A',
+    profesional_especialidad: turnoData.profesional_especialidad || turnoData.especialidad || 'N/A',
     direccion: process.env.EMAIL_DIRECCION || 'Consultorio',
     whatsapp: process.env.EMAIL_WHATSAPP || '-',
     telefono: process.env.EMAIL_TELEFONO || '-'
