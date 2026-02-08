@@ -2,9 +2,11 @@
  * SERVER.JS - Punto de entrada principal del servidor
  * 
  * Este archivo es el punto de entrada de la aplicación.
+ * Cargamos .env desde la carpeta api para que RESEND_API_KEY y demás variables
+ * se lean siempre de api/.env, sin importar desde qué directorio se ejecute.
  */
-
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const app = require('./src/app');
 const { query, closePool } = require('./src/config/database');
 const logger = require('./src/utils/logger');

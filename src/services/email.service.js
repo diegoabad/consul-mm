@@ -29,10 +29,17 @@ const renderTemplate = (templateName, vars = {}) => {
 };
 
 const useResend = Boolean(process.env.RESEND_API_KEY);
-let resendClient = null;
+let ResendClass = null;
 if (useResend) {
-  const { Resend } = require('resend');
-  resendClient = new Resend(process.env.RESEND_API_KEY);
+  ResendClass = require('resend').Resend;
+}
+
+/** Obtiene el cliente Resend con la API key actual de process.env (evita usar una key cacheada al iniciar). */
+function getResendClient() {
+  if (!useResend || !ResendClass) return null;
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) return null;
+  return new ResendClass(apiKey);
 }
 
 /**
@@ -47,6 +54,7 @@ const sendEmail = async (options) => {
   const html = options.html || options.text;
 
   try {
+    const resendClient = getResendClient();
     if (useResend && resendClient) {
       // Resend solo permite enviar desde onboarding@resend.dev o dominios verificados en resend.com/domains
       const from = process.env.RESEND_FROM || RESEND_FROM_DEFAULT;
