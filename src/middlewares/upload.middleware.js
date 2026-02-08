@@ -42,9 +42,9 @@ const storage = multer.diskStorage({
     cb(null, tempDir);
   },
   filename: (req, file, cb) => {
-    // Generar nombre único: uuid-timestamp-nombreOriginal
-    const uniqueName = `${uuidv4()}-${Date.now()}-${file.originalname}`;
-    cb(null, uniqueName);
+    // Nombre en disco solo uuid + extensión segura (sin nombre original para evitar problemas de codificación)
+    const ext = (path.extname(file.originalname) || '').toLowerCase().replace(/[^a-z0-9.]/g, '').slice(0, 12) || '';
+    cb(null, `${uuidv4()}-${Date.now()}${ext}`);
   }
 });
 

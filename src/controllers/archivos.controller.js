@@ -14,6 +14,7 @@ const logger = require('../utils/logger');
 const { buildResponse } = require('../utils/helpers');
 const path = require('path');
 const fs = require('fs');
+const { v4: uuidv4 } = require('uuid');
 
 // Directorio base para uploads
 const UPLOADS_DIR = path.join(__dirname, '../../uploads');
@@ -243,7 +244,10 @@ const upload = async (req, res, next) => {
       }
     }
     
-    // Mover archivo del directorio temporal a la carpeta del paciente
+    const ext = path.extname(req.file.originalname) || '';
+    const safeFilename = `${uuidv4()}-${Date.now()}${ext}`;
+
+    // Mover archivo del directorio temporal a la carpeta del paciente (nombre seguro, sin mojibake en ruta)
     const pacienteDir = path.join(UPLOADS_DIR, 'pacientes', paciente_id);
     
     // Crear directorio del paciente si no existe
@@ -251,10 +255,8 @@ const upload = async (req, res, next) => {
       fs.mkdirSync(pacienteDir, { recursive: true });
     }
     
-    // Ruta final del archivo
-    const finalPath = path.join(pacienteDir, req.file.filename);
+    const finalPath = path.join(pacienteDir, safeFilename);
     
-    // Mover archivo de temp a la carpeta del paciente
     try {
       fs.renameSync(req.file.path, finalPath);
     } catch (err) {
@@ -276,20 +278,24 @@ const upload = async (req, res, next) => {
     const relativePath = finalPath.replace(path.join(__dirname, '../../'), '').replace(/\\/g, '/');
     const urlArchivo = `/${relativePath}`;
     
-    // Crear registro en la base de datos
+    // Nombre: usar el enviado en el body (UTF-8) para soportar español; si no viene, el del archivo
+    const nombreArchivo = (req.body && typeof req.body.nombre_archivo === 'string' && req.body.nombre_archivo.trim())
+      ? req.body.nombre_archivo.trim()
+      : req.file.originalname;
+
     const archivo = await archivoModel.create({
       paciente_id,
       usuario_id,
       profesional_id: profesional_id || null,
-      nombre_archivo: req.file.originalname,
+      nombre_archivo: nombreArchivo,
       tipo_archivo: req.file.mimetype,
       url_archivo: urlArchivo,
       tamanio_bytes: req.file.size,
       descripcion: descripcion || null
     });
-    
-    logger.info('Archivo subido exitosamente:', { id: archivo.id, paciente_id, nombre: req.file.originalname });
-    
+
+    logger.info('Archivo subido exitosamente:', { id: archivo.id, paciente_id, nombre: nombreArchivo });
+
     res.status(201).json(buildResponse(true, archivo, 'Archivo subido exitosamente'));
   } catch (error) {
     // Eliminar archivo subido si hay error
@@ -333,7 +339,6 @@ const download = async (req, res, next) => {
       return res.status(404).json(buildResponse(false, null, 'El archivo físico no existe'));
     }
     
-    // Enviar archivo
     res.download(filePath, archivo.nombre_archivo, (err) => {
       if (err) {
         logger.error('Error descargando archivo:', err);
@@ -420,7 +425,7 @@ const update = async (req, res, next) => {
     }
     
     const archivo = await archivoModel.update(id, updateData);
-    
+
     res.json(buildResponse(true, archivo, 'Archivo actualizado exitosamente'));
   } catch (error) {
     logger.error('Error en update archivo:', error);

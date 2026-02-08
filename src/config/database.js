@@ -24,8 +24,11 @@ const pool = new Pool({
   connectionTimeoutMillis: 10000
 });
 
-// Event listeners del pool
-pool.on('connect', () => {
+// Event listeners del pool: forzar UTF-8 para evitar corrupción de acentos (ej. í -> \u0001)
+pool.on('connect', (client) => {
+  client.query("SET client_encoding TO 'UTF8'").catch((err) => {
+    logger.warn('No se pudo establecer client_encoding UTF8:', err.message);
+  });
   logger.info('Nueva conexión a la base de datos establecida');
 });
 

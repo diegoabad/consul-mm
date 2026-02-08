@@ -39,6 +39,31 @@
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
 
+/** Normaliza vigencia_desde y vigencia_hasta a YYYY-MM-DD para evitar horas en la respuesta (00:00 desde, fecha hasta = fin de día) */
+function toDateOnly(val) {
+  if (val == null) return null;
+  if (typeof val === 'string') {
+    const s = val.trim();
+    return s.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : s;
+  }
+  if (val instanceof Date) {
+    const y = val.getFullYear();
+    const m = String(val.getMonth() + 1).padStart(2, '0');
+    const d = String(val.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  return val;
+}
+
+function normalizeVigencia(row) {
+  if (!row) return row;
+  return {
+    ...row,
+    vigencia_desde: toDateOnly(row.vigencia_desde),
+    vigencia_hasta: row.vigencia_hasta != null ? toDateOnly(row.vigencia_hasta) : null
+  };
+}
+
 /**
  * Buscar todas las configuraciones de agenda con filtros opcionales
  * @param {Object} filters - Filtros: profesional_id, dia_semana, activo, vigente (default true = solo vigentes)
@@ -76,15 +101,15 @@ const findAll = async (filters = {}) => {
       params.push(filters.activo);
     }
     
-    // Vigente = sin cierre o vigencia_hasta después de hoy (excluir cerradas hoy para que no compitan con las nuevas)
+    // Vigente = sin cierre o vigencia_hasta >= hoy (incluye períodos de un solo día ese día)
     if (filters.vigente !== false) {
-      sql += ` AND (ca.vigencia_hasta IS NULL OR ca.vigencia_hasta > CURRENT_DATE)`;
+      sql += ` AND (ca.vigencia_hasta IS NULL OR ca.vigencia_hasta >= CURRENT_DATE)`;
     }
     
-    sql += ' ORDER BY ca.profesional_id, ca.dia_semana, ca.hora_inicio';
-    
+sql += ' ORDER BY ca.profesional_id, ca.dia_semana, ca.hora_inicio';
+
     const result = await query(sql, params);
-    return result.rows;
+    return result.rows.map(normalizeVigencia);
   } catch (error) {
     logger.error('Error en findAll configuracion_agenda:', error);
     throw error;
@@ -111,7 +136,7 @@ const findById = async (id) => {
       WHERE ca.id = $1`,
       [id]
     );
-    return result.rows[0] || null;
+    return result.rows[0] ? normalizeVigencia(result.rows[0]) : null;
   } catch (error) {
     logger.error('Error en findById configuracion_agenda:', error);
     throw error;
@@ -143,13 +168,13 @@ const findByProfesional = async (profesionalId, soloActivos = false, vigente = t
     }
     
     if (vigente) {
-      sql += ' AND (ca.vigencia_hasta IS NULL OR ca.vigencia_hasta > CURRENT_DATE)';
+      sql += ' AND (ca.vigencia_hasta IS NULL OR ca.vigencia_hasta >= CURRENT_DATE)';
     }
     
-    sql += ' ORDER BY ca.dia_semana, ca.hora_inicio';
-    
+sql += ' ORDER BY ca.dia_semana, ca.hora_inicio';
+
     const result = await query(sql, params);
-    return result.rows;
+    return result.rows.map(normalizeVigencia);
   } catch (error) {
     logger.error('Error en findByProfesional configuracion_agenda:', error);
     throw error;
@@ -179,6 +204,8 @@ const vigentConfigCoversDateTime = async (profesionalId, fechaHora) => {
     const minutos = fechaHora.getHours() * 60 + fechaHora.getMinutes();
     for (const c of configs) {
       if (c.dia_semana !== diaSemana) continue;
+      // dia_semana 7 = "sin días fijos": placeholder con hora_inicio/hora_fin 00:00; no genera slots semanales
+      if (c.dia_semana === 7) continue;
       const inicioMin = timeToMinutes(c.hora_inicio);
       const finMin = timeToMinutes(c.hora_fin);
       if (minutos >= inicioMin && minutos < finMin) return true;
@@ -216,6 +243,34 @@ const checkDuplicate = async (profesionalId, diaSemana, horaInicio, excludeId = 
     return parseInt(result.rows[0].count) > 0;
   } catch (error) {
     logger.error('Error en checkDuplicate configuracion_agenda:', error);
+    throw error;
+  }
+};
+
+/**
+ * Verificar si ya existe algún periodo que se solape con [vigenciaDesde, vigenciaHasta] para el profesional.
+ * Usado para no permitir crear un día puntual (o periodo con fin) que caiga dentro de otro periodo.
+ * @param {string} profesionalId - UUID del profesional
+ * @param {string} vigenciaDesde - YYYY-MM-DD inicio del nuevo periodo
+ * @param {string|null} vigenciaHasta - YYYY-MM-DD fin del nuevo periodo (null = abierto)
+ * @returns {Promise<boolean>} true si hay al menos una fila con rango de vigencia que se solapa
+ */
+const hasOverlappingPeriod = async (profesionalId, vigenciaDesde, vigenciaHasta = null) => {
+  try {
+    if (!vigenciaDesde || String(vigenciaDesde).trim() === '') return false;
+    const desde = String(vigenciaDesde).trim().slice(0, 10);
+    const hastaVal = (vigenciaHasta != null && String(vigenciaHasta).trim() !== '') ? String(vigenciaHasta).trim().slice(0, 10) : '9999-12-31';
+    const result = await query(
+      `SELECT 1 FROM configuracion_agenda
+       WHERE profesional_id = $1
+         AND $2::date <= COALESCE(vigencia_hasta, '9999-12-31'::date)
+         AND $3::date >= vigencia_desde
+       LIMIT 1`,
+      [profesionalId, desde, hastaVal]
+    );
+    return result.rows.length > 0;
+  } catch (error) {
+    logger.error('Error en hasOverlappingPeriod:', error);
     throw error;
   }
 };
@@ -261,7 +316,7 @@ const create = async (agendaData) => {
       values
     );
 
-    return result.rows[0];
+    return normalizeVigencia(result.rows[0]);
   } catch (error) {
     logger.error('Error en create configuracion_agenda:', error);
     throw error;
@@ -329,7 +384,7 @@ const update = async (id, agendaData) => {
     `;
     
     const result = await query(sql, values);
-    return result.rows[0];
+    return result.rows[0] ? normalizeVigencia(result.rows[0]) : null;
   } catch (error) {
     logger.error('Error en update configuracion_agenda:', error);
     throw error;
@@ -355,6 +410,24 @@ const deleteAgenda = async (id) => {
 };
 
 /**
+ * Eliminar todas las configuraciones de agenda de un profesional
+ * @param {string} profesionalId - UUID del profesional
+ * @returns {Promise<number>} Cantidad de filas eliminadas
+ */
+const deleteAllByProfesional = async (profesionalId) => {
+  try {
+    const result = await query(
+      'DELETE FROM configuracion_agenda WHERE profesional_id = $1',
+      [profesionalId]
+    );
+    return result.rowCount ?? 0;
+  } catch (error) {
+    logger.error('Error en deleteAllByProfesional configuracion_agenda:', error);
+    throw error;
+  }
+};
+
+/**
  * Activar configuración de agenda
  * @param {string} id - UUID de la configuración
  * @returns {Promise<Object>} Configuración actualizada
@@ -365,7 +438,7 @@ const activate = async (id) => {
       'UPDATE configuracion_agenda SET activo = true WHERE id = $1 RETURNING *',
       [id]
     );
-    return result.rows[0];
+    return result.rows[0] ? normalizeVigencia(result.rows[0]) : null;
   } catch (error) {
     logger.error('Error en activate configuracion_agenda:', error);
     throw error;
@@ -383,7 +456,7 @@ const deactivate = async (id) => {
       'UPDATE configuracion_agenda SET activo = false WHERE id = $1 RETURNING *',
       [id]
     );
-    return result.rows[0];
+    return result.rows[0] ? normalizeVigencia(result.rows[0]) : null;
   } catch (error) {
     logger.error('Error en deactivate configuracion_agenda:', error);
     throw error;
@@ -432,23 +505,37 @@ const guardarHorariosSemana = async (profesionalId, horarios, fechaDesde = null,
   try {
     const normalizeTime = (t) => (t && t.length === 5 ? t + ':00' : t);
     const vigenciaDesde = (fechaDesde != null && String(fechaDesde).trim() !== '') ? String(fechaDesde).trim().slice(0, 10) : null;
-    // Cerrar la vigencia anterior hasta (vigencia_desde de la nueva - 1 día): la anterior termina el día antes de que empiece la nueva. “vieja” sigue aplicando todo su mes).
-    let vigenciaHastaCierre = null;
-    if (vigenciaDesde) {
+    const vigenciaHasta = (fechaHasta != null && String(fechaHasta).trim() !== '') ? String(fechaHasta).trim().slice(0, 10) : null;
+
+    // Periodo con fin (ej. día puntual): no debe solaparse con ningún otro periodo; no cerramos los demás.
+    if (vigenciaDesde && vigenciaHasta) {
+      const overlap = await hasOverlappingPeriod(profesionalId, vigenciaDesde, vigenciaHasta);
+      if (overlap) {
+        const err = new Error('La fecha elegida se solapa con otro periodo de agenda. Elegí una fecha que no caiga dentro de un periodo ya creado.');
+        err.code = 'OVERLAP_VIGENCIA';
+        throw err;
+      }
+      // Crear solo las nuevas filas, sin cerrar otros periodos.
+    } else if (vigenciaDesde) {
+      // Periodo abierto (sin fecha_hasta): cerramos el periodo vigente anterior y creamos el nuevo.
       const [yD, mD, dD] = vigenciaDesde.split('-').map(Number);
       const diaAnterior = new Date(yD, mD - 1, dD - 1);
       const y = diaAnterior.getFullYear();
       const m = String(diaAnterior.getMonth() + 1).padStart(2, '0');
       const d = String(diaAnterior.getDate()).padStart(2, '0');
-      vigenciaHastaCierre = `${y}-${m}-${d}`;
+      const vigenciaHastaCierre = `${y}-${m}-${d}`;
+      await closeVigenciaForProfesional(profesionalId, vigenciaHastaCierre);
     }
-    await closeVigenciaForProfesional(profesionalId, vigenciaHastaCierre);
-    const vigenciaHasta = (fechaHasta != null && String(fechaHasta).trim() !== '') ? String(fechaHasta).trim().slice(0, 10) : null;
     const duracion = (duracionTurnoMinutos != null && Number.isInteger(duracionTurnoMinutos) && duracionTurnoMinutos >= 5 && duracionTurnoMinutos <= 480)
       ? duracionTurnoMinutos
       : 30;
     const created = [];
-    for (const h of horarios) {
+    // Sin días fijos: un solo período abierto (vigencia_desde, sin vigencia_hasta) sin horarios semanales.
+    // Se crea una fila placeholder con dia_semana=7 para que el profesional "tenga agenda" pero el calendario no muestre ningún día hasta que use "Habilitar" (excepciones).
+    const horariosAInsertar = (vigenciaDesde && !vigenciaHasta && (!horarios || horarios.length === 0))
+      ? [{ dia_semana: 7, hora_inicio: '00:00', hora_fin: '00:00' }]
+      : horarios;
+    for (const h of horariosAInsertar) {
       const row = await create({
         profesional_id: profesionalId,
         dia_semana: h.dia_semana,
@@ -477,6 +564,7 @@ module.exports = {
   create,
   update,
   delete: deleteAgenda,
+  deleteAllByProfesional,
   activate,
   deactivate,
   closeVigenciaForProfesional,

@@ -12,6 +12,33 @@ const profesionalModel = require('../models/profesional.model');
 const logger = require('../utils/logger');
 const { buildResponse } = require('../utils/helpers');
 
+/** Normaliza vigencia_desde y vigencia_hasta a YYYY-MM-DD en la respuesta para evitar horas (00:00 desde, fecha hasta = fin de día) */
+function toDateOnly(val) {
+  if (val == null) return null;
+  if (typeof val === 'string') {
+    const s = val.trim();
+    return s.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : s;
+  }
+  if (val instanceof Date) {
+    const y = val.getFullYear();
+    const m = String(val.getMonth() + 1).padStart(2, '0');
+    const d = String(val.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  return val;
+}
+function normalizeAgendaVigencias(agenda) {
+  if (!agenda) return agenda;
+  return {
+    ...agenda,
+    vigencia_desde: toDateOnly(agenda.vigencia_desde),
+    vigencia_hasta: agenda.vigencia_hasta != null ? toDateOnly(agenda.vigencia_hasta) : null
+  };
+}
+function normalizeAgendaList(list) {
+  return Array.isArray(list) ? list.map(normalizeAgendaVigencias) : list;
+}
+
 // ============================================
 // CONTROLADORES PARA CONFIGURACIÓN DE AGENDA
 // ============================================
@@ -31,7 +58,7 @@ const getAllAgenda = async (req, res, next) => {
     
     const agendas = await agendaModel.findAll(filters);
     
-    res.json(buildResponse(true, agendas, 'Configuraciones de agenda obtenidas exitosamente'));
+    res.json(buildResponse(true, normalizeAgendaList(agendas), 'Configuraciones de agenda obtenidas exitosamente'));
   } catch (error) {
     logger.error('Error en getAllAgenda:', error);
     next(error);
@@ -50,7 +77,7 @@ const getAgendaById = async (req, res, next) => {
       return res.status(404).json(buildResponse(false, null, 'Configuración de agenda no encontrada'));
     }
     
-    res.json(buildResponse(true, agenda, 'Configuración de agenda obtenida exitosamente'));
+    res.json(buildResponse(true, normalizeAgendaVigencias(agenda), 'Configuración de agenda obtenida exitosamente'));
   } catch (error) {
     logger.error('Error en getAgendaById:', error);
     next(error);
@@ -73,7 +100,7 @@ const getAgendaByProfesional = async (req, res, next) => {
     const vigenteFilter = vigente !== 'false';
     const agendas = await agendaModel.findByProfesional(id, solo_activos === 'true', vigenteFilter);
     
-    res.json(buildResponse(true, agendas, 'Configuraciones de agenda del profesional obtenidas exitosamente'));
+    res.json(buildResponse(true, normalizeAgendaList(agendas), 'Configuraciones de agenda del profesional obtenidas exitosamente'));
   } catch (error) {
     logger.error('Error en getAgendaByProfesional:', error);
     next(error);
@@ -94,7 +121,7 @@ const getProfesionalIdSiProfesional = async (userId, rol) => {
 const guardarHorariosSemana = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { horarios, fecha_desde: fechaDesde, duracion_turno_minutos: duracionTurnoMinutos } = req.body;
+    const { horarios, fecha_desde: fechaDesde, fecha_hasta: fechaHasta, duracion_turno_minutos: duracionTurnoMinutos } = req.body;
     const miProfesionalId = await getProfesionalIdSiProfesional(req.user.id, req.user.rol);
     if (miProfesionalId !== null && miProfesionalId !== id) {
       return res.status(403).json(buildResponse(false, null, 'No tiene permisos para modificar la agenda de otro profesional'));
@@ -107,10 +134,13 @@ const guardarHorariosSemana = async (req, res, next) => {
       return res.status(400).json(buildResponse(false, null, 'No se puede modificar la agenda de un profesional bloqueado'));
     }
     
-    const created = await agendaModel.guardarHorariosSemana(id, horarios, fechaDesde, duracionTurnoMinutos);
+    const created = await agendaModel.guardarHorariosSemana(id, horarios, fechaDesde, duracionTurnoMinutos, fechaHasta);
     
-    res.status(201).json(buildResponse(true, created, 'Horarios de la semana guardados correctamente'));
+    res.status(201).json(buildResponse(true, normalizeAgendaList(created), 'Horarios de la semana guardados correctamente'));
   } catch (error) {
+    if (error.code === 'OVERLAP_VIGENCIA') {
+      return res.status(400).json(buildResponse(false, null, error.message));
+    }
     logger.error('Error en guardarHorariosSemana:', error);
     next(error);
   }
@@ -162,7 +192,7 @@ const createAgenda = async (req, res, next) => {
       throw error;
     }
     
-    res.status(201).json(buildResponse(true, agenda, 'Configuración de agenda creada exitosamente'));
+    res.status(201).json(buildResponse(true, normalizeAgendaVigencias(agenda), 'Configuración de agenda creada exitosamente'));
   } catch (error) {
     logger.error('Error en createAgenda:', error);
     next(error);
@@ -203,7 +233,7 @@ const updateAgenda = async (req, res, next) => {
     
     const agenda = await agendaModel.update(id, updateData);
     
-    res.json(buildResponse(true, agenda, 'Configuración de agenda actualizada exitosamente'));
+    res.json(buildResponse(true, normalizeAgendaVigencias(agenda), 'Configuración de agenda actualizada exitosamente'));
   } catch (error) {
     logger.error('Error en updateAgenda:', error);
     next(error);
@@ -255,7 +285,7 @@ const activateAgenda = async (req, res, next) => {
     
     const agendaActualizada = await agendaModel.activate(id);
     
-    res.json(buildResponse(true, agendaActualizada, 'Configuración de agenda activada exitosamente'));
+    res.json(buildResponse(true, normalizeAgendaVigencias(agendaActualizada), 'Configuración de agenda activada exitosamente'));
   } catch (error) {
     logger.error('Error en activateAgenda:', error);
     next(error);
@@ -282,7 +312,7 @@ const deactivateAgenda = async (req, res, next) => {
     
     const agendaActualizada = await agendaModel.deactivate(id);
     
-    res.json(buildResponse(true, agendaActualizada, 'Configuración de agenda desactivada exitosamente'));
+    res.json(buildResponse(true, normalizeAgendaVigencias(agendaActualizada), 'Configuración de agenda desactivada exitosamente'));
   } catch (error) {
     logger.error('Error en deactivateAgenda:', error);
     next(error);
