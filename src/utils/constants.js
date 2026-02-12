@@ -127,8 +127,11 @@ const PERMISOS = [
 ];
 
 // Permisos por defecto según rol
+const PERMISOS_ADMIN = PERMISOS.filter(
+  (p) => p !== 'evoluciones.actualizar' && p !== 'evoluciones.eliminar'
+);
 const PERMISOS_POR_ROL = {
-  [ROLES.ADMINISTRADOR]: PERMISOS, // Administrador tiene todos los permisos
+  [ROLES.ADMINISTRADOR]: PERMISOS_ADMIN, // Admin sin editar/eliminar evoluciones
   
   [ROLES.PROFESIONAL]: [
     'profesionales.leer', // solo para ver su propio registro (filtrado en backend)
