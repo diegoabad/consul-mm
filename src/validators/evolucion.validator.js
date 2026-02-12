@@ -22,6 +22,10 @@ const createEvolucionSchema = Joi.object({
     .messages({
       'string.guid': 'El turno_id debe ser un UUID válido'
     }),
+  evolucion_anterior_id: Joi.string().uuid().optional().allow(null, '')
+    .messages({
+      'string.guid': 'El evolucion_anterior_id debe ser un UUID válido'
+    }),
   fecha_consulta: Joi.date().iso().required()
     .messages({
       'date.base': 'La fecha_consulta debe ser una fecha válida',

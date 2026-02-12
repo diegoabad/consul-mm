@@ -154,7 +154,7 @@ const PERMISOS_POR_ROL = {
     'agenda.excepciones.eliminar',
     'evoluciones.crear',
     'evoluciones.leer',
-    'evoluciones.actualizar',
+    // Sin evoluciones.actualizar ni evoluciones.eliminar: el profesional solo puede crear y leer
     'archivos.subir',
     'archivos.leer',
     'archivos.descargar',

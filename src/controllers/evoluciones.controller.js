@@ -184,7 +184,7 @@ const getByTurno = async (req, res, next) => {
  */
 const create = async (req, res, next) => {
   try {
-    const { paciente_id, profesional_id, turno_id, fecha_consulta, motivo_consulta, diagnostico, tratamiento, observaciones } = req.body;
+    const { paciente_id, profesional_id, turno_id, evolucion_anterior_id, fecha_consulta, motivo_consulta, diagnostico, tratamiento, observaciones } = req.body;
     
     const paciente = await pacienteModel.findById(paciente_id);
     if (!paciente) {
@@ -227,11 +227,27 @@ const create = async (req, res, next) => {
         return res.status(400).json(buildResponse(false, null, 'El turno no corresponde al profesional especificado'));
       }
     }
-    
+
+    // Si se proporciona evolucion_anterior_id (corrección/aclaración de otra evolución), validar
+    let evolucionAnteriorId = evolucion_anterior_id || null;
+    if (evolucionAnteriorId) {
+      const evolucionAnterior = await evolucionModel.findById(evolucionAnteriorId);
+      if (!evolucionAnterior) {
+        return res.status(404).json(buildResponse(false, null, 'Evolución anterior no encontrada'));
+      }
+      if (evolucionAnterior.paciente_id !== paciente_id) {
+        return res.status(400).json(buildResponse(false, null, 'La evolución anterior debe ser del mismo paciente'));
+      }
+      if (evolucionAnterior.profesional_id !== profesional_id) {
+        return res.status(400).json(buildResponse(false, null, 'La evolución anterior debe ser del mismo profesional'));
+      }
+    }
+
     const evolucion = await evolucionModel.create({
       paciente_id,
       profesional_id,
       turno_id: turno_id || null,
+      evolucion_anterior_id: evolucionAnteriorId,
       fecha_consulta: new Date(fecha_consulta),
       motivo_consulta: motivo_consulta || null,
       diagnostico: diagnostico || null,
