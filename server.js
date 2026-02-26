@@ -7,9 +7,10 @@
  */
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
+const logger = require('./src/utils/logger');
+const { bootstrap } = require('./src/config/bootstrap-db');
 const app = require('./src/app');
 const { query, closePool } = require('./src/config/database');
-const logger = require('./src/utils/logger');
 
 const PORT = process.env.PORT || 5000;
 
@@ -27,6 +28,9 @@ const testConnection = async () => {
 // Iniciar servidor
 const startServer = async () => {
   try {
+    // Inicializar DB si está vacía: schema, migraciones pendientes, usuario admin (si ADMIN_EMAIL/ADMIN_PASSWORD)
+    await bootstrap();
+    logger.info('Bootstrap completado; migraciones verificadas al arrancar.');
     // Verificar conexión a la base de datos
     await testConnection();
     

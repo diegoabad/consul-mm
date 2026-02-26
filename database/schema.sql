@@ -433,5 +433,14 @@ COMMENT ON TABLE especialidades IS 'Especialidades médicas disponibles';
 COMMENT ON TABLE obras_sociales IS 'Obras sociales disponibles para pacientes';
 
 -- ============================================
+-- Control de migraciones (para bootstrap automático)
+-- ============================================
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version VARCHAR(100) PRIMARY KEY,
+    applied_at TIMESTAMP DEFAULT NOW()
+);
+COMMENT ON TABLE schema_migrations IS 'Registro de migraciones aplicadas (bootstrap al arrancar)';
+
+-- ============================================
 -- FIN DEL SCRIPT
 -- ============================================

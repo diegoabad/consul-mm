@@ -7,6 +7,7 @@
 
 const express = require('express');
 const router = express.Router();
+const { getMigrationsStatus } = require('../config/bootstrap-db');
 
 // Importar rutas
 const authRoutes = require('./auth.routes');
@@ -24,12 +25,24 @@ const especialidadesRoutes = require('./especialidades.routes');
 const obrasSocialesRoutes = require('./obras-sociales.routes');
 const logsRoutes = require('./logs.routes');
 
-// Health check
-router.get('/health', (req, res) => {
+// Health check (incluye estado de migraciones: si hay pendientes, se aplican al arrancar el servidor)
+router.get('/health', async (req, res) => {
+  let migrationsStatus = null;
+  try {
+    const status = await getMigrationsStatus();
+    migrationsStatus = {
+      upToDate: status.upToDate,
+      pendingCount: status.pending.length,
+      pending: status.pending.length > 0 ? status.pending : undefined
+    };
+  } catch (err) {
+    migrationsStatus = { error: err.message };
+  }
   res.json({
     success: true,
     message: 'API funcionando correctamente',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    migrations: migrationsStatus
   });
 });
 
