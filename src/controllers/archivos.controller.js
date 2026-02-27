@@ -15,8 +15,9 @@ const { buildResponse } = require('../utils/helpers');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
+const azureStorage = require('../services/azure-storage.service');
 
-// Directorio base para uploads
+// Directorio base para uploads (solo cuando no se usa Azure Blob)
 const UPLOADS_DIR = path.join(__dirname, '../../uploads');
 
 /**
@@ -27,6 +28,7 @@ const UPLOADS_DIR = path.join(__dirname, '../../uploads');
  */
 async function filtrarArchivosExistentes(archivos) {
   if (!archivos || archivos.length === 0) return archivos;
+  if (azureStorage.isAzureConfigured()) return archivos;
   const baseDir = path.join(__dirname, '../..');
   const validos = [];
   for (const a of archivos) {
@@ -246,37 +248,34 @@ const upload = async (req, res, next) => {
     
     const ext = path.extname(req.file.originalname) || '';
     const safeFilename = `${uuidv4()}-${Date.now()}${ext}`;
+    const blobPath = `uploads/archivos/${uuidv4()}/${safeFilename}`;
+    let urlArchivo;
 
-    // Mover archivo del directorio temporal a la carpeta del paciente (nombre seguro, sin mojibake en ruta)
-    const pacienteDir = path.join(UPLOADS_DIR, 'pacientes', paciente_id);
-    
-    // Crear directorio del paciente si no existe
-    if (!fs.existsSync(pacienteDir)) {
-      fs.mkdirSync(pacienteDir, { recursive: true });
-    }
-    
-    const finalPath = path.join(pacienteDir, safeFilename);
-    
-    try {
-      fs.renameSync(req.file.path, finalPath);
-    } catch (err) {
-      logger.error('Error moviendo archivo a carpeta del paciente:', err);
-      // Eliminar archivo temporal si falla el movimiento
-      if (req.file.path) {
-        try {
-          fs.unlinkSync(req.file.path);
-        } catch (unlinkErr) {
-          logger.error('Error eliminando archivo temporal después de fallo:', unlinkErr);
-        }
+    if (azureStorage.isAzureConfigured()) {
+      try {
+        const buffer = fs.readFileSync(req.file.path);
+        await azureStorage.uploadBuffer(blobPath, buffer);
+        urlArchivo = `/${blobPath}`;
+        try { fs.unlinkSync(req.file.path); } catch (e) { logger.warn('Error eliminando temp tras upload Azure:', e.message); }
+      } catch (err) {
+        logger.warn('Storage no disponible - archivo guardado en local como respaldo. Error:', err.message);
+        // Fallback a disco local si Azure falla (conexión, credenciales, etc.)
       }
-      return res.status(500).json(buildResponse(false, null, 'Error al guardar el archivo'));
     }
-    
-    // Construir URL relativa del archivo
-    // finalPath será algo como: uploads/pacientes/{paciente_id}/{filename}
-    // La URL será: /uploads/pacientes/{paciente_id}/{filename}
-    const relativePath = finalPath.replace(path.join(__dirname, '../../'), '').replace(/\\/g, '/');
-    const urlArchivo = `/${relativePath}`;
+    if (!urlArchivo) {
+      const archivoDir = path.join(UPLOADS_DIR, 'archivos', uuidv4());
+      if (!fs.existsSync(archivoDir)) fs.mkdirSync(archivoDir, { recursive: true });
+      const finalPath = path.join(archivoDir, safeFilename);
+      try {
+        fs.renameSync(req.file.path, finalPath);
+      } catch (err) {
+        logger.error('Error moviendo archivo a carpeta del paciente:', err);
+        if (req.file.path) { try { fs.unlinkSync(req.file.path); } catch (unlinkErr) {} }
+        return res.status(500).json(buildResponse(false, null, 'Error al guardar el archivo'));
+      }
+      const relativePath = finalPath.replace(path.join(__dirname, '../../'), '').replace(/\\/g, '/');
+      urlArchivo = `/${relativePath}`;
+    }
     
     // Nombre: usar el enviado en el body (UTF-8) para soportar español; si no viene, el del archivo
     const nombreArchivo = (req.body && typeof req.body.nombre_archivo === 'string' && req.body.nombre_archivo.trim())
@@ -295,6 +294,11 @@ const upload = async (req, res, next) => {
     });
 
     logger.info('Archivo subido exitosamente:', { id: archivo.id, paciente_id, nombre: nombreArchivo });
+
+    // Si Azure está configurado y el archivo quedó en local (fallback), intentar subirlo a Storage y borrar local en background
+    if (azureStorage.isAzureConfigured()) {
+      setImmediate(() => syncOneLocalToStorage(archivo).catch(e => logger.error('Sync local→Storage tras subida:', e.message)));
+    }
 
     res.status(201).json(buildResponse(true, archivo, 'Archivo subido exitosamente'));
   } catch (error) {
@@ -331,14 +335,23 @@ const download = async (req, res, next) => {
       }
     }
     
-    // Construir ruta completa del archivo
-    const filePath = path.join(__dirname, '../../', archivo.url_archivo);
-    
-    // Verificar que el archivo existe físicamente
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json(buildResponse(false, null, 'El archivo físico no existe'));
+    if (azureStorage.isAzureConfigured()) {
+      const blobPath = azureStorage.toBlobName(archivo.url_archivo);
+      const stream = await azureStorage.getReadStream(blobPath);
+      if (stream) {
+        const fileName = archivo.nombre_archivo || 'archivo';
+        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+        if (archivo.tipo_archivo) res.setHeader('Content-Type', archivo.tipo_archivo);
+        stream.pipe(res);
+        return;
+      }
+      // Blob no encontrado (ej. archivo viejo guardado en local): intentar disco local
     }
-    
+
+    const filePath = path.join(__dirname, '../../', archivo.url_archivo);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json(buildResponse(false, null, 'El archivo no existe'));
+    }
     res.download(filePath, archivo.nombre_archivo, (err) => {
       if (err) {
         logger.error('Error descargando archivo:', err);
@@ -373,20 +386,20 @@ const deleteArchivo = async (req, res, next) => {
       }
     }
     
-    // Construir ruta completa del archivo
+    if (azureStorage.isAzureConfigured()) {
+      const blobPath = azureStorage.toBlobName(archivo.url_archivo);
+      await azureStorage.deleteBlob(blobPath);
+    }
     const filePath = path.join(__dirname, '../../', archivo.url_archivo);
-    
-    // Eliminar archivo físico si existe
     if (fs.existsSync(filePath)) {
       try {
         fs.unlinkSync(filePath);
         logger.info('Archivo físico eliminado:', { path: filePath });
       } catch (err) {
         logger.error('Error eliminando archivo físico:', err);
-        // Continuar con la eliminación del registro aunque falle la eliminación física
       }
     }
-    
+
     // Eliminar registro de la base de datos
     const eliminado = await archivoModel.delete(id);
     
@@ -433,6 +446,50 @@ const update = async (req, res, next) => {
   }
 };
 
+/**
+ * Sincroniza un archivo que está en disco local hacia Azure Blob.
+ * Si la subida es exitosa, borra el archivo local (local queda como respaldo solo hasta que se vacíe).
+ * No hace nada si Azure no está configurado o si el archivo no existe en disco.
+ * @param {Object} archivo - Registro con id y url_archivo
+ * @returns {Promise<boolean>} true si se subió a Storage y se borró local
+ */
+async function syncOneLocalToStorage(archivo) {
+  if (!azureStorage.isAzureConfigured() || !archivo || !archivo.url_archivo) return false;
+  const baseDir = path.join(__dirname, '../..');
+  const filePath = path.join(baseDir, archivo.url_archivo.replace(/^\//, ''));
+  if (!fs.existsSync(filePath)) return false;
+  const blobPath = azureStorage.toBlobName(archivo.url_archivo);
+  try {
+    const buffer = fs.readFileSync(filePath);
+    await azureStorage.uploadBuffer(blobPath, buffer);
+    fs.unlinkSync(filePath);
+    logger.info('Archivo local subido a Storage y eliminado de disco (respaldo vaciado)', { id: archivo.id, url: archivo.url_archivo });
+    return true;
+  } catch (err) {
+    logger.warn('Sync local→Storage fallido (archivo sigue en local):', err.message, { id: archivo.id });
+    return false;
+  }
+}
+
+/**
+ * Recorre todos los archivos en la DB: si existe en disco y no en Storage, lo sube y borra de local.
+ * Se ejecuta en background al arrancar el servidor (y opcionalmente tras cada fallback).
+ */
+async function syncAllLocalToStorage() {
+  if (!azureStorage.isAzureConfigured()) return;
+  try {
+    const archivos = await archivoModel.findAll({});
+    let synced = 0;
+    for (const a of archivos) {
+      const ok = await syncOneLocalToStorage(a);
+      if (ok) synced++;
+    }
+    if (synced > 0) logger.info('Sync local→Storage al arranque: ' + synced + ' archivo(s) subidos a Storage y borrados de disco.');
+  } catch (err) {
+    logger.error('Error en sync local→Storage al arranque:', err);
+  }
+}
+
 module.exports = {
   getAll,
   getById,
@@ -440,5 +497,7 @@ module.exports = {
   upload,
   download,
   delete: deleteArchivo,
-  update
+  update,
+  syncOneLocalToStorage,
+  syncAllLocalToStorage
 };

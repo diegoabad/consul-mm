@@ -7,6 +7,7 @@
 
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
+const { encrypt, decrypt } = require('../utils/encryption');
 
 /**
  * Buscar todas las notas con filtros opcionales
@@ -44,7 +45,7 @@ const findAll = async (filters = {}) => {
     sql += ' ORDER BY n.fecha_creacion DESC';
     
     const result = await query(sql, params);
-    return result.rows;
+    return result.rows.map((r) => ({ ...r, contenido: decrypt(r.contenido) }));
   } catch (error) {
     logger.error('Error en findAll notas_paciente:', error);
     throw error;
@@ -72,7 +73,9 @@ const findById = async (id) => {
       WHERE n.id = $1`,
       [id]
     );
-    return result.rows[0] || null;
+    const row = result.rows[0] || null;
+    if (row) row.contenido = decrypt(row.contenido);
+    return row;
   } catch (error) {
     logger.error('Error en findById nota:', error);
     throw error;
@@ -99,7 +102,7 @@ const findByPaciente = async (pacienteId) => {
       ORDER BY n.fecha_creacion DESC`,
       [pacienteId]
     );
-    return result.rows;
+    return result.rows.map((r) => ({ ...r, contenido: decrypt(r.contenido) }));
   } catch (error) {
     logger.error('Error en findByPaciente nota:', error);
     throw error;
@@ -124,7 +127,13 @@ const findByUsuario = async (usuarioId) => {
       ORDER BY n.fecha_creacion DESC`,
       [usuarioId]
     );
-    return result.rows;
+    return result.rows.map((r) => ({
+      ...r,
+      contenido: decrypt(r.contenido),
+      paciente_nombre: r.paciente_nombre != null ? decrypt(r.paciente_nombre) : r.paciente_nombre,
+      paciente_apellido: r.paciente_apellido != null ? decrypt(r.paciente_apellido) : r.paciente_apellido,
+      paciente_dni: r.paciente_dni != null ? decrypt(r.paciente_dni) : r.paciente_dni
+    }));
   } catch (error) {
     logger.error('Error en findByUsuario nota:', error);
     throw error;
@@ -138,21 +147,18 @@ const findByUsuario = async (usuarioId) => {
  */
 const create = async (notaData) => {
   try {
-    const {
-      paciente_id,
-      usuario_id,
-      contenido
-    } = notaData;
-    
+    const { paciente_id, usuario_id, contenido } = notaData;
+    const encContenido = encrypt(contenido);
     const result = await query(
       `INSERT INTO notas_paciente 
         (paciente_id, usuario_id, contenido)
       VALUES ($1, $2, $3)
       RETURNING *`,
-      [paciente_id, usuario_id, contenido]
+      [paciente_id, usuario_id, encContenido]
     );
-    
-    return result.rows[0];
+    const row = result.rows[0];
+    if (row) row.contenido = decrypt(row.contenido);
+    return row;
   } catch (error) {
     logger.error('Error en create nota:', error);
     throw error;
@@ -173,7 +179,7 @@ const update = async (id, notaData) => {
     
     if (notaData.contenido !== undefined) {
       fields.push(`contenido = $${paramIndex++}`);
-      values.push(notaData.contenido);
+      values.push(encrypt(notaData.contenido));
     }
     
     if (fields.length === 0) {
@@ -190,7 +196,9 @@ const update = async (id, notaData) => {
     `;
     
     const result = await query(sql, values);
-    return result.rows[0];
+    const row = result.rows[0];
+    if (row) row.contenido = decrypt(row.contenido);
+    return row;
   } catch (error) {
     logger.error('Error en update nota:', error);
     throw error;

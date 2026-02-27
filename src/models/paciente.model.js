@@ -7,6 +7,7 @@
 
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
+const { encryptPacienteRow, decryptPacienteRow, decryptPacienteRows, isEncryptionEnabled } = require('../utils/encryption');
 
 /**
  * Buscar todos los pacientes con filtros opcionales
@@ -44,7 +45,7 @@ const findAll = async (filters = {}) => {
     sql += ' ORDER BY fecha_creacion DESC';
     
     const result = await query(sql, params);
-    return result.rows;
+    return decryptPacienteRows(result.rows);
   } catch (error) {
     logger.error('Error en findAll pacientes:', error);
     throw error;
@@ -59,13 +60,56 @@ const findAll = async (filters = {}) => {
 const findAllPaginated = async (filters = {}) => {
   try {
     const { page = 1, limit = 10 } = filters;
-    const offset = (Math.max(1, page) - 1) * Math.min(100, Math.max(1, limit));
     const limitVal = Math.min(100, Math.max(1, limit));
+    const offset = (Math.max(1, page) - 1) * limitVal;
+    const hasQ = filters.q && String(filters.q).trim();
+    const useEncryptedSearch = isEncryptionEnabled() && hasQ;
+
+    if (useEncryptedSearch) {
+      let where = ' WHERE 1=1';
+      const params = [];
+      let paramIndex = 1;
+      if (filters.activo !== undefined) {
+        where += ` AND activo = $${paramIndex++}`;
+        params.push(filters.activo);
+      }
+      if (filters.obra_social) {
+        where += ` AND obra_social ILIKE $${paramIndex++}`;
+        params.push(`%${filters.obra_social}%`);
+      }
+      if (filters.ids && Array.isArray(filters.ids) && filters.ids.length > 0) {
+        where += ` AND id = ANY($${paramIndex++})`;
+        params.push(filters.ids);
+      }
+      params.push(2000);
+      const dataResult = await query(
+        `SELECT id, dni, nombre, apellido, fecha_nacimiento, telefono, email,
+          direccion, obra_social, numero_afiliado, plan, contacto_emergencia_nombre,
+          contacto_emergencia_telefono, activo, fecha_creacion, fecha_actualizacion
+         FROM pacientes ${where}
+         ORDER BY fecha_creacion DESC
+         LIMIT $${paramIndex}`,
+        params
+      );
+      const decrypted = decryptPacienteRows(dataResult.rows);
+      const term = String(filters.q).trim().toLowerCase();
+      const obraMatch = filters.obra_social ? String(filters.obra_social).trim().toLowerCase() : null;
+      const filtered = decrypted.filter((p) => {
+        const matchQ = (p.nombre || '').toLowerCase().includes(term) ||
+          (p.apellido || '').toLowerCase().includes(term) ||
+          (p.dni || '').toLowerCase().includes(term) ||
+          (p.email || '').toLowerCase().includes(term);
+        const matchObra = !obraMatch || (p.obra_social || '').toLowerCase().includes(obraMatch);
+        return matchQ && matchObra;
+      });
+      const total = filtered.length;
+      const rows = filtered.slice(offset, offset + limitVal);
+      return { rows, total };
+    }
 
     let where = ' WHERE 1=1';
     const params = [];
     let paramIndex = 1;
-
     if (filters.activo !== undefined) {
       where += ` AND activo = $${paramIndex++}`;
       params.push(filters.activo);
@@ -78,7 +122,7 @@ const findAllPaginated = async (filters = {}) => {
       where += ` AND id = ANY($${paramIndex++})`;
       params.push(filters.ids);
     }
-    if (filters.q && String(filters.q).trim()) {
+    if (hasQ) {
       const term = `%${String(filters.q).trim()}%`;
       where += ` AND (nombre ILIKE $${paramIndex} OR apellido ILIKE $${paramIndex} OR dni ILIKE $${paramIndex} OR email ILIKE $${paramIndex})`;
       params.push(term);
@@ -90,7 +134,6 @@ const findAllPaginated = async (filters = {}) => {
       params
     );
     const total = countResult.rows[0]?.total ?? 0;
-
     const dataParams = [...params, limitVal, offset];
     const dataSql = `
       SELECT id, dni, nombre, apellido, fecha_nacimiento, telefono, email,
@@ -101,7 +144,7 @@ const findAllPaginated = async (filters = {}) => {
       LIMIT $${paramIndex++} OFFSET $${paramIndex}
     `;
     const dataResult = await query(dataSql, dataParams);
-    return { rows: dataResult.rows, total };
+    return { rows: decryptPacienteRows(dataResult.rows), total };
   } catch (error) {
     logger.error('Error en findAllPaginated pacientes:', error);
     throw error;
@@ -124,7 +167,8 @@ const findById = async (id) => {
       WHERE id = $1`,
       [id]
     );
-    return result.rows[0] || null;
+    const row = result.rows[0] || null;
+    return row ? decryptPacienteRow(row) : null;
   } catch (error) {
     logger.error('Error en findById paciente:', error);
     throw error;
@@ -138,6 +182,20 @@ const findById = async (id) => {
  */
 const findByDni = async (dni) => {
   try {
+    if (isEncryptionEnabled()) {
+      const result = await query(
+        `SELECT id, dni, nombre, apellido, fecha_nacimiento, telefono, email,
+         direccion, obra_social, numero_afiliado, plan, contacto_emergencia_nombre,
+         contacto_emergencia_telefono, activo, fecha_creacion, fecha_actualizacion
+         FROM pacientes LIMIT 5000`
+      );
+      const term = String(dni || '').trim();
+      for (const row of result.rows) {
+        const dec = decryptPacienteRow(row);
+        if (dec.dni === term) return dec;
+      }
+      return null;
+    }
     const result = await query(
       `SELECT 
         id, dni, nombre, apellido, fecha_nacimiento, telefono, email,
@@ -161,7 +219,27 @@ const findByDni = async (dni) => {
  */
 const search = async (searchTerm) => {
   try {
-    const term = `%${searchTerm}%`;
+    const term = String(searchTerm || '').trim().toLowerCase();
+    if (!term) return [];
+
+    if (isEncryptionEnabled()) {
+      const result = await query(
+        `SELECT id, dni, nombre, apellido, fecha_nacimiento, telefono, email,
+         direccion, obra_social, numero_afiliado, plan, contacto_emergencia_nombre,
+         contacto_emergencia_telefono, activo, fecha_creacion, fecha_actualizacion
+         FROM pacientes ORDER BY fecha_creacion DESC LIMIT 2000`
+      );
+      const decrypted = decryptPacienteRows(result.rows);
+      const filtered = decrypted.filter((p) => {
+        const n = (p.nombre || '').toLowerCase();
+        const a = (p.apellido || '').toLowerCase();
+        const d = (p.dni || '').toLowerCase();
+        return n.includes(term) || a.includes(term) || d.includes(term);
+      });
+      return filtered.slice(0, 50);
+    }
+
+    const sqlTerm = `%${term}%`;
     const result = await query(
       `SELECT 
         id, dni, nombre, apellido, fecha_nacimiento, telefono, email,
@@ -174,7 +252,7 @@ const search = async (searchTerm) => {
         dni ILIKE $1
       ORDER BY nombre, apellido
       LIMIT 50`,
-      [term]
+      [sqlTerm]
     );
     return result.rows;
   } catch (error) {
@@ -190,22 +268,22 @@ const search = async (searchTerm) => {
  */
 const create = async (pacienteData) => {
   try {
-    const {
-      dni,
-      nombre,
-      apellido,
-      fecha_nacimiento,
-      telefono,
-      email,
-      direccion,
-      obra_social,
-      numero_afiliado,
-      plan,
-      contacto_emergencia_nombre,
-      contacto_emergencia_telefono,
-      activo = true
-    } = pacienteData;
-    
+    const raw = {
+      dni: pacienteData.dni,
+      nombre: pacienteData.nombre,
+      apellido: pacienteData.apellido,
+      fecha_nacimiento: pacienteData.fecha_nacimiento ?? null,
+      telefono: pacienteData.telefono ?? null,
+      email: pacienteData.email ?? null,
+      direccion: pacienteData.direccion ?? null,
+      obra_social: pacienteData.obra_social ?? null,
+      numero_afiliado: pacienteData.numero_afiliado ?? null,
+      plan: pacienteData.plan ?? null,
+      contacto_emergencia_nombre: pacienteData.contacto_emergencia_nombre ?? null,
+      contacto_emergencia_telefono: pacienteData.contacto_emergencia_telefono ?? null,
+      activo: pacienteData.activo !== false
+    };
+    const enc = encryptPacienteRow(raw);
     const result = await query(
       `INSERT INTO pacientes (
         dni, nombre, apellido, fecha_nacimiento, telefono, email,
@@ -217,13 +295,12 @@ const create = async (pacienteData) => {
                 direccion, obra_social, numero_afiliado, plan, contacto_emergencia_nombre,
                 contacto_emergencia_telefono, activo, fecha_creacion, fecha_actualizacion`,
       [
-        dni, nombre, apellido, fecha_nacimiento || null, telefono || null,
-        email || null, direccion || null, obra_social || null, numero_afiliado || null, plan || null,
-        contacto_emergencia_nombre || null, contacto_emergencia_telefono || null, activo
+        enc.dni, enc.nombre, enc.apellido, enc.fecha_nacimiento, enc.telefono,
+        enc.email, enc.direccion, enc.obra_social, enc.numero_afiliado, enc.plan,
+        enc.contacto_emergencia_nombre, enc.contacto_emergencia_telefono, enc.activo
       ]
     );
-    
-    return result.rows[0];
+    return decryptPacienteRow(result.rows[0]);
   } catch (error) {
     logger.error('Error en create paciente:', error);
     throw error;
@@ -238,30 +315,28 @@ const create = async (pacienteData) => {
  */
 const update = async (id, pacienteData) => {
   try {
-    const updates = [];
-    const params = [];
-    let paramIndex = 1;
-    
     const allowedFields = [
       'dni', 'nombre', 'apellido', 'fecha_nacimiento', 'telefono', 'email',
       'direccion', 'obra_social', 'numero_afiliado', 'plan', 'contacto_emergencia_nombre',
       'contacto_emergencia_telefono', 'activo'
     ];
-    
+    const raw = {};
     for (const field of allowedFields) {
-      if (pacienteData[field] !== undefined) {
+      if (pacienteData[field] !== undefined) raw[field] = pacienteData[field];
+    }
+    if (Object.keys(raw).length === 0) return await findById(id);
+
+    const enc = encryptPacienteRow(raw);
+    const updates = [];
+    const params = [];
+    let paramIndex = 1;
+    for (const field of allowedFields) {
+      if (enc[field] !== undefined) {
         updates.push(`${field} = $${paramIndex++}`);
-        params.push(pacienteData[field]);
+        params.push(enc[field]);
       }
     }
-    
-    if (updates.length === 0) {
-      // Si no hay cambios, retornar el paciente actual
-      return await findById(id);
-    }
-    
     params.push(id);
-    
     const sql = `
       UPDATE pacientes 
       SET ${updates.join(', ')} 
@@ -270,9 +345,8 @@ const update = async (id, pacienteData) => {
                 direccion, obra_social, numero_afiliado, plan, contacto_emergencia_nombre,
                 contacto_emergencia_telefono, activo, fecha_creacion, fecha_actualizacion
     `;
-    
     const result = await query(sql, params);
-    return result.rows[0];
+    return result.rows[0] ? decryptPacienteRow(result.rows[0]) : null;
   } catch (error) {
     logger.error('Error en update paciente:', error);
     throw error;
@@ -313,7 +387,7 @@ const activate = async (id) => {
                  contacto_emergencia_telefono, activo, fecha_creacion, fecha_actualizacion`,
       [id]
     );
-    return result.rows[0];
+    return result.rows[0] ? decryptPacienteRow(result.rows[0]) : null;
   } catch (error) {
     logger.error('Error en activate paciente:', error);
     throw error;
@@ -336,7 +410,7 @@ const deactivate = async (id) => {
                  contacto_emergencia_telefono, activo, fecha_creacion, fecha_actualizacion`,
       [id]
     );
-    return result.rows[0];
+    return result.rows[0] ? decryptPacienteRow(result.rows[0]) : null;
   } catch (error) {
     logger.error('Error en deactivate paciente:', error);
     throw error;

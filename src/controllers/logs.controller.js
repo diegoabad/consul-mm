@@ -1,6 +1,21 @@
 /**
  * LOGS.CONTROLLER.JS - Crear y listar logs de errores (front/back)
  * Una sola tabla; columna origen distingue los registros.
+ *
+ * =============================================================================
+ * DATOS QUE GUARDAMOS EN LOGS
+ * =============================================================================
+ *
+ * Campos comunes:
+ *   - origen   : 'front' | 'back'
+ *   - mensaje  : texto principal (obligatorio)
+ *   - stack    : stack trace (opcional)
+ *
+ * Front (origen='front'): usuario_id, rol, pantalla, accion
+ * Back (origen='back') : ruta, metodo, params (JSON)
+ *
+ * Ver log.model.js para documentación completa.
+ * =============================================================================
  */
 
 const logModel = require('../models/log.model');

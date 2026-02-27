@@ -38,6 +38,8 @@ const MIGRATIONS_ORDER = [
   '018_turnos_utc_to_argentina.sql',
   '019_configuracion_agenda_dia_semana_allow_7.sql',
   '020_add_evolucion_anterior_id.sql',
+  '021_pacientes_notas_evoluciones_text_for_encryption.sql',
+  '022_archivos_paciente_encrypt_paciente_id.sql',
 ];
 
 const SALT_ROUNDS = 10;

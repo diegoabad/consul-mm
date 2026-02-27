@@ -1,6 +1,43 @@
 /**
  * LOG.MODEL.JS - Modelo de logs de errores (front y back)
  * Una sola tabla; columna origen distingue 'front' | 'back'.
+ *
+ * =============================================================================
+ * DATOS QUE GUARDAMOS EN LOGS
+ * =============================================================================
+ *
+ * Campos comunes (front y back):
+ *   - id          : PK autoincremental
+ *   - created_at  : timestamp de creación (automático)
+ *   - origen      : 'front' | 'back' — de dónde proviene el log
+ *   - mensaje     : texto principal (obligatorio) — descripción del error o evento
+ *   - stack       : stack trace del error (opcional, sobre todo en back)
+ *
+ * Campos de logs FRONT (origen='front'):
+ *   - usuario_id  : ID del usuario logueado (si hay sesión)
+ *   - rol         : rol del usuario (administrador, profesional, secretaria)
+ *   - pantalla    : nombre de la pantalla/vista (ej. "ObrasSociales", "Logs")
+ *   - accion      : acción que disparó el log (ej. "ver_listado", "0 obras sociales registradas")
+ *   - ruta        : null (no se usa en front)
+ *   - metodo      : null (no se usa en front)
+ *   - params      : null (no se usa en front)
+ *
+ * Campos de logs BACK (origen='back'):
+ *   - usuario_id  : ID del usuario si la petición venía autenticada
+ *   - rol         : rol del usuario
+ *   - pantalla    : null (no se usa en back)
+ *   - accion      : null (no se usa en back)
+ *   - ruta        : ruta HTTP (ej. /api/turnos, /api/pacientes)
+ *   - metodo      : método HTTP (GET, POST, PUT, DELETE, etc.)
+ *   - params      : JSON con query + body (sanitizado) de la petición
+ *
+ * Orígenes de logs:
+ *   1. errorHandler.middleware.js — errores no capturados en el backend
+ *   2. turnos.controller.js       — fallo al enviar email de confirmación de turno
+ *   3. POST /api/logs             — frontend envía logs (ej. "0 obras sociales registradas")
+ *   4. scripts/create-test-log.js — logs de prueba
+ *
+ * =============================================================================
  */
 
 const { query } = require('../config/database');

@@ -7,6 +7,7 @@
 
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
+const { encrypt, decryptEvolucionRow, decryptEvolucionRows } = require('../utils/encryption');
 
 /**
  * Buscar todas las evoluciones clínicas con filtros opcionales
@@ -62,9 +63,9 @@ const findAll = async (filters = {}) => {
     }
     
     sql += ' ORDER BY e.fecha_consulta DESC';
-    
+
     const result = await query(sql, params);
-    return result.rows;
+    return decryptEvolucionRows(result.rows);
   } catch (error) {
     logger.error('Error en findAll evoluciones_clinicas:', error);
     throw error;
@@ -97,7 +98,8 @@ const findById = async (id) => {
       WHERE e.id = $1`,
       [id]
     );
-    return result.rows[0] || null;
+    const row = result.rows[0] || null;
+    return row ? decryptEvolucionRow(row) : null;
   } catch (error) {
     logger.error('Error en findById evolucion:', error);
     throw error;
@@ -141,9 +143,9 @@ const findByPaciente = async (pacienteId, fechaInicio = null, fechaFin = null) =
     }
     
     sql += ' ORDER BY e.fecha_consulta DESC';
-    
+
     const result = await query(sql, params);
-    return result.rows;
+    return decryptEvolucionRows(result.rows);
   } catch (error) {
     logger.error('Error en findByPaciente evolucion:', error);
     throw error;
@@ -185,9 +187,9 @@ const findByProfesional = async (profesionalId, fechaInicio = null, fechaFin = n
     }
     
     sql += ' ORDER BY e.fecha_consulta DESC';
-    
+
     const result = await query(sql, params);
-    return result.rows;
+    return decryptEvolucionRows(result.rows);
   } catch (error) {
     logger.error('Error en findByProfesional evolucion:', error);
     throw error;
@@ -213,7 +215,7 @@ const findByTurno = async (turnoId) => {
       ORDER BY e.fecha_consulta DESC`,
       [turnoId]
     );
-    return result.rows;
+    return decryptEvolucionRows(result.rows);
   } catch (error) {
     logger.error('Error en findByTurno evolucion:', error);
     throw error;
@@ -238,16 +240,18 @@ const create = async (evolucionData) => {
       tratamiento = null,
       observaciones = null
     } = evolucionData;
-    
+    const encMotivo = encrypt(motivo_consulta);
+    const encDiag = encrypt(diagnostico);
+    const encTrat = encrypt(tratamiento);
+    const encObs = encrypt(observaciones);
     const result = await query(
       `INSERT INTO evoluciones_clinicas 
         (paciente_id, profesional_id, turno_id, evolucion_anterior_id, fecha_consulta, motivo_consulta, diagnostico, tratamiento, observaciones)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING *`,
-      [paciente_id, profesional_id, turno_id, evolucion_anterior_id, fecha_consulta, motivo_consulta, diagnostico, tratamiento, observaciones]
+      [paciente_id, profesional_id, turno_id, evolucion_anterior_id, fecha_consulta, encMotivo, encDiag, encTrat, encObs]
     );
-    
-    return result.rows[0];
+    return result.rows[0] ? decryptEvolucionRow(result.rows[0]) : null;
   } catch (error) {
     logger.error('Error en create evolucion:', error);
     throw error;
@@ -278,22 +282,19 @@ const update = async (id, evolucionData) => {
     
     if (evolucionData.motivo_consulta !== undefined) {
       fields.push(`motivo_consulta = $${paramIndex++}`);
-      values.push(evolucionData.motivo_consulta);
+      values.push(encrypt(evolucionData.motivo_consulta));
     }
-    
     if (evolucionData.diagnostico !== undefined) {
       fields.push(`diagnostico = $${paramIndex++}`);
-      values.push(evolucionData.diagnostico);
+      values.push(encrypt(evolucionData.diagnostico));
     }
-    
     if (evolucionData.tratamiento !== undefined) {
       fields.push(`tratamiento = $${paramIndex++}`);
-      values.push(evolucionData.tratamiento);
+      values.push(encrypt(evolucionData.tratamiento));
     }
-    
     if (evolucionData.observaciones !== undefined) {
       fields.push(`observaciones = $${paramIndex++}`);
-      values.push(evolucionData.observaciones);
+      values.push(encrypt(evolucionData.observaciones));
     }
     
     if (fields.length === 0) {
@@ -310,7 +311,7 @@ const update = async (id, evolucionData) => {
     `;
     
     const result = await query(sql, values);
-    return result.rows[0];
+    return result.rows[0] ? decryptEvolucionRow(result.rows[0]) : null;
   } catch (error) {
     logger.error('Error en update evolucion:', error);
     throw error;

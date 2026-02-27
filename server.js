@@ -7,12 +7,17 @@
  */
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
+const cron = require('node-cron');
 const logger = require('./src/utils/logger');
 const { bootstrap } = require('./src/config/bootstrap-db');
+const { syncEncryptExistingData } = require('./src/utils/sync-encrypt-existing');
 const app = require('./src/app');
 const { query, closePool } = require('./src/config/database');
 
 const PORT = process.env.PORT || 5000;
+
+// Cron: sync local → Storage una vez al día (ej. 3:00 AM). Variable opcional: CRON_SYNC_STORAGE (ej. "0 3 * * *")
+const CRON_SYNC_STORAGE = process.env.CRON_SYNC_STORAGE || '0 3 * * *';
 
 // Verificar conexión a la base de datos
 const testConnection = async () => {
@@ -33,11 +38,24 @@ const startServer = async () => {
     logger.info('Bootstrap completado; migraciones verificadas al arrancar.');
     // Verificar conexión a la base de datos
     await testConnection();
+    // Cifrar datos existentes en texto plano (pacientes, evoluciones, notas, turnos)
+    syncEncryptExistingData().catch((e) => logger.error('Sync encrypt al arranque:', e));
     
     // Iniciar servidor
+    const archivosController = require('./src/controllers/archivos.controller');
     const server = app.listen(PORT, () => {
       logger.info(`Servidor iniciado en puerto ${PORT}`);
       logger.info(`Ambiente: ${process.env.NODE_ENV || 'development'}`);
+      // Una vez al arranque: subir a Storage lo que esté solo en local y borrar de disco (local = respaldo temporal)
+      setTimeout(() => {
+        archivosController.syncAllLocalToStorage().catch(e => logger.error('Sync local→Storage al arranque:', e));
+      }, 10000);
+      // Cron diario: local → Storage (vaciar respaldo local). Por defecto todos los días a las 3:00
+      const cronJob = cron.schedule(CRON_SYNC_STORAGE, () => {
+        logger.info('Cron: ejecutando sync local→Storage (respaldo → Azure)');
+        archivosController.syncAllLocalToStorage().catch(e => logger.error('Sync local→Storage (cron):', e));
+      });
+      server.on('close', () => { cronJob.stop(); });
     });
     
     // Manejo de cierre graceful

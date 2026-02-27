@@ -8,6 +8,7 @@
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
 const { ESTADOS_TURNO } = require('../utils/constants');
+const { encrypt, decryptTurnoRow, decryptTurnoRows } = require('../utils/encryption');
 
 /** Devuelve fecha/hora como texto UTC "YYYY-MM-DD HH:mm:ss" para guardar en TIMESTAMP sin TZ */
 function dateToUTCString(d) {
@@ -86,7 +87,7 @@ const findAll = async (filters = {}) => {
       fecha_hora_inicio: toISOUTC(r.fecha_hora_inicio),
       fecha_hora_fin: toISOUTC(r.fecha_hora_fin)
     }));
-    return rows;
+    return decryptTurnoRows(rows);
   } catch (error) {
     logger.error('Error en findAll turnos:', error);
     throw error;
@@ -162,7 +163,7 @@ const findAllPaginated = async (filters = {}) => {
       fecha_hora_inicio: toISOUTC(r.fecha_hora_inicio),
       fecha_hora_fin: toISOUTC(r.fecha_hora_fin)
     }));
-    return { rows, total };
+    return { rows: decryptTurnoRows(rows), total };
   } catch (error) {
     logger.error('Error en findAllPaginated turnos:', error);
     throw error;
@@ -195,8 +196,9 @@ const findById = async (id) => {
     if (row) {
       row.fecha_hora_inicio = toISOUTC(row.fecha_hora_inicio);
       row.fecha_hora_fin = toISOUTC(row.fecha_hora_fin);
+      return decryptTurnoRow(row);
     }
-    return row;
+    return null;
   } catch (error) {
     logger.error('Error en findById turno:', error);
     throw error;
@@ -238,11 +240,12 @@ const findByProfesional = async (profesionalId, fechaInicio = null, fechaFin = n
     sql += ' ORDER BY t.fecha_hora_inicio ASC';
     
     const result = await query(sql, params);
-    return result.rows.map((r) => ({
+    const rows = result.rows.map((r) => ({
       ...r,
       fecha_hora_inicio: toISOUTC(r.fecha_hora_inicio),
       fecha_hora_fin: toISOUTC(r.fecha_hora_fin)
     }));
+    return decryptTurnoRows(rows);
   } catch (error) {
     logger.error('Error en findByProfesional turnos:', error);
     throw error;
@@ -286,11 +289,12 @@ const findByPaciente = async (pacienteId, fechaInicio = null, fechaFin = null) =
     sql += ' ORDER BY t.fecha_hora_inicio DESC';
     
     const result = await query(sql, params);
-    return result.rows.map((r) => ({
+    const rows = result.rows.map((r) => ({
       ...r,
       fecha_hora_inicio: toISOUTC(r.fecha_hora_inicio),
       fecha_hora_fin: toISOUTC(r.fecha_hora_fin)
     }));
+    return decryptTurnoRows(rows);
   } catch (error) {
     logger.error('Error en findByPaciente turnos:', error);
     throw error;
@@ -390,6 +394,7 @@ const create = async (turnoData) => {
     } = turnoData;
     const inicioStr = fecha_hora_inicio instanceof Date ? dateToUTCString(fecha_hora_inicio) : dateToUTCString(new Date(fecha_hora_inicio));
     const finStr = fecha_hora_fin instanceof Date ? dateToUTCString(fecha_hora_fin) : dateToUTCString(new Date(fecha_hora_fin));
+    const encMotivo = encrypt(motivo || null);
 
     const result = await query(
       `INSERT INTO turnos (
@@ -402,13 +407,14 @@ const create = async (turnoData) => {
                 fecha_creacion, fecha_actualizacion`,
       [
         profesional_id, paciente_id, inicioStr, finStr,
-        estado, Boolean(sobreturno), motivo || null
+        estado, Boolean(sobreturno), encMotivo
       ]
     );
     const row = result.rows[0];
     if (row) {
       row.fecha_hora_inicio = toISOUTC(row.fecha_hora_inicio);
       row.fecha_hora_fin = toISOUTC(row.fecha_hora_fin);
+      return decryptTurnoRow(row);
     }
     return row;
   } catch (error) {
@@ -439,6 +445,8 @@ const update = async (id, turnoData) => {
         const val = turnoData[field];
         if (field === 'fecha_hora_inicio' || field === 'fecha_hora_fin') {
           params.push(val instanceof Date ? dateToUTCString(val) : dateToUTCString(new Date(val)));
+        } else if (field === 'motivo') {
+          params.push(encrypt(val ?? null));
         } else {
           params.push(val);
         }
@@ -466,6 +474,7 @@ const update = async (id, turnoData) => {
     if (row) {
       row.fecha_hora_inicio = toISOUTC(row.fecha_hora_inicio);
       row.fecha_hora_fin = toISOUTC(row.fecha_hora_fin);
+      return decryptTurnoRow(row);
     }
     return row;
   } catch (error) {
@@ -483,16 +492,23 @@ const update = async (id, turnoData) => {
  */
 const cancel = async (id, razon, canceladoPor = null) => {
   try {
+    const encRazon = encrypt(razon || null);
     const result = await query(
       `UPDATE turnos 
        SET estado = $1, razon_cancelacion = $2, cancelado_por = $3
        WHERE id = $4
-       RETURNING id, profesional_id, paciente_id, fecha_hora_inicio, fecha_hora_fin,
+       RETURNING id, profesional_id, paciente_id, fecha_hora_inicio::text as fecha_hora_inicio, fecha_hora_fin::text as fecha_hora_fin,
                  estado, motivo, cancelado_por, razon_cancelacion,
                  fecha_creacion, fecha_actualizacion`,
-      [ESTADOS_TURNO.CANCELADO, razon || null, canceladoPor || null, id]
+      [ESTADOS_TURNO.CANCELADO, encRazon, canceladoPor || null, id]
     );
-    return result.rows[0];
+    const row = result.rows[0];
+    if (row) {
+      row.fecha_hora_inicio = toISOUTC(row.fecha_hora_inicio);
+      row.fecha_hora_fin = toISOUTC(row.fecha_hora_fin);
+      return decryptTurnoRow(row);
+    }
+    return row;
   } catch (error) {
     logger.error('Error en cancel turno:', error);
     throw error;
@@ -510,12 +526,18 @@ const confirm = async (id) => {
       `UPDATE turnos 
        SET estado = $1
        WHERE id = $2
-       RETURNING id, profesional_id, paciente_id, fecha_hora_inicio, fecha_hora_fin,
+       RETURNING id, profesional_id, paciente_id, fecha_hora_inicio::text as fecha_hora_inicio, fecha_hora_fin::text as fecha_hora_fin,
                  estado, motivo, cancelado_por, razon_cancelacion,
                  fecha_creacion, fecha_actualizacion`,
       [ESTADOS_TURNO.CONFIRMADO, id]
     );
-    return result.rows[0];
+    const row = result.rows[0];
+    if (row) {
+      row.fecha_hora_inicio = toISOUTC(row.fecha_hora_inicio);
+      row.fecha_hora_fin = toISOUTC(row.fecha_hora_fin);
+      return decryptTurnoRow(row);
+    }
+    return row;
   } catch (error) {
     logger.error('Error en confirm turno:', error);
     throw error;
@@ -542,6 +564,7 @@ const complete = async (id) => {
     if (row) {
       row.fecha_hora_inicio = toISOUTC(row.fecha_hora_inicio);
       row.fecha_hora_fin = toISOUTC(row.fecha_hora_fin);
+      return decryptTurnoRow(row);
     }
     return row;
   } catch (error) {
