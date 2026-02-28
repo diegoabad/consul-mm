@@ -7,38 +7,10 @@
 
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
-const {
-  encrypt,
-  encryptArchivoRow,
-  decryptArchivoRow,
-  decryptArchivoRows,
-  encryptDeterministic,
-  isEncryptionEnabled,
-  decryptPacienteRow,
-} = require('../utils/encryption');
+const { decryptArchivoRow, decryptArchivoRows } = require('../utils/encryption');
 
-async function findAllWithPatientJoin(rows) {
-  if (!rows || rows.length === 0) return rows;
-  const decRows = decryptArchivoRows(rows);
-  const pacienteIds = [...new Set(decRows.map((r) => r.paciente_id).filter(Boolean))];
-  if (pacienteIds.length === 0) return decRows;
-  const pacRes = await query(
-    `SELECT id, nombre, apellido, dni FROM pacientes WHERE id = ANY($1)`,
-    [pacienteIds]
-  );
-  const pacMap = Object.fromEntries(
-    pacRes.rows.map((p) => [p.id, decryptPacienteRow(p)])
-  );
-  return decRows.map((r) => {
-    const pac = pacMap[r.paciente_id];
-    if (pac) {
-      r.paciente_nombre = pac.nombre;
-      r.paciente_apellido = pac.apellido;
-      r.paciente_dni = pac.dni;
-    }
-    return r;
-  });
-}
+// Los archivos NO se cifran (por decisión del cliente: permite backups y acceso directo a los archivos).
+// decryptArchivoRow se mantiene para compatibilidad con datos legacy que pudieran estar cifrados.
 
 /**
  * Buscar todos los archivos con filtros opcionales
@@ -47,37 +19,6 @@ async function findAllWithPatientJoin(rows) {
  */
 const findAll = async (filters = {}) => {
   try {
-    const useEnc = isEncryptionEnabled();
-    const pacienteIdVal = useEnc && filters.paciente_id ? encryptDeterministic(filters.paciente_id) : filters.paciente_id;
-
-    if (useEnc) {
-      let sql = `
-        SELECT a.id, a.paciente_id, a.profesional_id, a.usuario_id, a.nombre_archivo, a.tipo_archivo,
-          a.url_archivo, a.tamanio_bytes, a.descripcion, a.fecha_subida, a.fecha_actualizacion,
-          prof.matricula, prof.especialidad,
-          u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido,
-          u_subido.nombre as usuario_subido_nombre, u_subido.apellido as usuario_subido_apellido
-        FROM archivos_paciente a
-        INNER JOIN usuarios u_subido ON a.usuario_id = u_subido.id
-        LEFT JOIN profesionales prof ON a.profesional_id = prof.id
-        LEFT JOIN usuarios u_prof ON prof.usuario_id = u_prof.id
-        WHERE 1=1
-      `;
-      const params = [];
-      let paramIndex = 1;
-      if (pacienteIdVal) {
-        sql += ` AND a.paciente_id = $${paramIndex++}`;
-        params.push(pacienteIdVal);
-      }
-      if (filters.profesional_id) {
-        sql += ` AND a.profesional_id = $${paramIndex++}`;
-        params.push(filters.profesional_id);
-      }
-      sql += ' ORDER BY a.fecha_subida DESC';
-      const result = await query(sql, params);
-      return findAllWithPatientJoin(result.rows);
-    }
-
     let sql = `
       SELECT 
         a.id, a.paciente_id, a.profesional_id, a.usuario_id, a.nombre_archivo, a.tipo_archivo,
@@ -105,7 +46,7 @@ const findAll = async (filters = {}) => {
     }
     sql += ' ORDER BY a.fecha_subida DESC';
     const result = await query(sql, params);
-    return decryptArchivoRows(result.rows);
+    return decryptArchivoRows(result.rows); // decrypt no-op si datos en claro (compat legacy)
   } catch (error) {
     logger.error('Error en findAll archivos_paciente:', error);
     throw error;
@@ -119,46 +60,24 @@ const findAll = async (filters = {}) => {
  */
 const findById = async (id) => {
   try {
-    const useEnc = isEncryptionEnabled();
     const result = await query(
-      useEnc
-        ? `SELECT a.id, a.paciente_id, a.profesional_id, a.usuario_id, a.nombre_archivo, a.tipo_archivo,
-            a.url_archivo, a.tamanio_bytes, a.descripcion, a.fecha_subida, a.fecha_actualizacion,
-            prof.matricula, prof.especialidad,
-            u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido,
-            u_subido.nombre as usuario_subido_nombre, u_subido.apellido as usuario_subido_apellido
-          FROM archivos_paciente a
-          INNER JOIN usuarios u_subido ON a.usuario_id = u_subido.id
-          LEFT JOIN profesionales prof ON a.profesional_id = prof.id
-          LEFT JOIN usuarios u_prof ON prof.usuario_id = u_prof.id
-          WHERE a.id = $1::uuid`
-        : `SELECT a.id, a.paciente_id, a.profesional_id, a.usuario_id, a.nombre_archivo, a.tipo_archivo,
-            a.url_archivo, a.tamanio_bytes, a.descripcion, a.fecha_subida, a.fecha_actualizacion,
-            p.nombre as paciente_nombre, p.apellido as paciente_apellido, p.dni as paciente_dni,
-            prof.matricula, prof.especialidad,
-            u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido,
-            u_subido.nombre as usuario_subido_nombre, u_subido.apellido as usuario_subido_apellido
-          FROM archivos_paciente a
-          INNER JOIN pacientes p ON a.paciente_id::uuid = p.id
-          INNER JOIN usuarios u_subido ON a.usuario_id = u_subido.id
-          LEFT JOIN profesionales prof ON a.profesional_id = prof.id
-          LEFT JOIN usuarios u_prof ON prof.usuario_id = u_prof.id
-          WHERE a.id = $1::uuid`,
+      `SELECT a.id, a.paciente_id, a.profesional_id, a.usuario_id, a.nombre_archivo, a.tipo_archivo,
+        a.url_archivo, a.tamanio_bytes, a.descripcion, a.fecha_subida, a.fecha_actualizacion,
+        p.nombre as paciente_nombre, p.apellido as paciente_apellido, p.dni as paciente_dni,
+        prof.matricula, prof.especialidad,
+        u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido,
+        u_subido.nombre as usuario_subido_nombre, u_subido.apellido as usuario_subido_apellido
+      FROM archivos_paciente a
+      INNER JOIN pacientes p ON a.paciente_id::uuid = p.id
+      INNER JOIN usuarios u_subido ON a.usuario_id = u_subido.id
+      LEFT JOIN profesionales prof ON a.profesional_id = prof.id
+      LEFT JOIN usuarios u_prof ON prof.usuario_id = u_prof.id
+      WHERE a.id = $1::uuid`,
       [id]
     );
     const row = result.rows[0] || null;
     if (!row) return null;
-    const dec = decryptArchivoRow(row);
-    if (useEnc && dec.paciente_id) {
-      const pacRes = await query(`SELECT id, nombre, apellido, dni FROM pacientes WHERE id = $1`, [dec.paciente_id]);
-      const pac = pacRes.rows[0] ? decryptPacienteRow(pacRes.rows[0]) : null;
-      if (pac) {
-        dec.paciente_nombre = pac.nombre;
-        dec.paciente_apellido = pac.apellido;
-        dec.paciente_dni = pac.dni;
-      }
-    }
-    return dec;
+    return decryptArchivoRow(row); // decrypt no-op si datos en claro (compat legacy)
   } catch (error) {
     logger.error('Error en findById archivo:', error);
     throw error;
@@ -172,7 +91,6 @@ const findById = async (id) => {
  */
 const findByPaciente = async (pacienteId) => {
   try {
-    const pacienteIdVal = isEncryptionEnabled() ? encryptDeterministic(pacienteId) : pacienteId;
     const result = await query(
       `SELECT 
         a.id, a.paciente_id, a.profesional_id, a.usuario_id, a.nombre_archivo, a.tipo_archivo,
@@ -186,7 +104,7 @@ const findByPaciente = async (pacienteId) => {
       LEFT JOIN usuarios u_prof ON prof.usuario_id = u_prof.id
       WHERE a.paciente_id = $1
       ORDER BY a.fecha_subida DESC`,
-      [pacienteIdVal]
+      [pacienteId]
     );
     return decryptArchivoRows(result.rows);
   } catch (error) {
@@ -202,17 +120,6 @@ const findByPaciente = async (pacienteId) => {
  */
 const findByProfesional = async (profesionalId) => {
   try {
-    if (isEncryptionEnabled()) {
-      const result = await query(
-        `SELECT a.id, a.paciente_id, a.profesional_id, a.nombre_archivo, a.tipo_archivo,
-          a.url_archivo, a.tamanio_bytes, a.descripcion, a.fecha_subida, a.fecha_actualizacion
-         FROM archivos_paciente a
-         WHERE a.profesional_id = $1
-         ORDER BY a.fecha_subida DESC`,
-        [profesionalId]
-      );
-      return findAllWithPatientJoin(result.rows);
-    }
     const result = await query(
       `SELECT 
         a.id, a.paciente_id, a.profesional_id, a.nombre_archivo, a.tipo_archivo,
@@ -248,25 +155,12 @@ const create = async (archivoData) => {
       tamanio_bytes = null,
       descripcion = null
     } = archivoData;
-    const enc = encryptArchivoRow({
-      paciente_id,
-      nombre_archivo,
-      url_archivo,
-      descripcion,
-    });
     const result = await query(
       `INSERT INTO archivos_paciente 
         (paciente_id, usuario_id, profesional_id, nombre_archivo, tipo_archivo, url_archivo, tamanio_bytes, descripcion)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING *`,
-      [
-        enc.paciente_id ?? paciente_id, usuario_id, profesional_id,
-        enc.nombre_archivo ?? nombre_archivo,
-        tipo_archivo,
-        enc.url_archivo ?? url_archivo,
-        tamanio_bytes,
-        enc.descripcion ?? descripcion,
-      ]
+      [paciente_id, usuario_id, profesional_id, nombre_archivo, tipo_archivo, url_archivo, tamanio_bytes, descripcion]
     );
     
     return result.rows[0] ? decryptArchivoRow(result.rows[0]) : null;
@@ -290,7 +184,7 @@ const update = async (id, archivoData) => {
     
     if (archivoData.nombre_archivo !== undefined) {
       fields.push(`nombre_archivo = $${paramIndex++}`);
-      values.push(encrypt(archivoData.nombre_archivo));
+      values.push(archivoData.nombre_archivo);
     }
     
     if (archivoData.tipo_archivo !== undefined) {
@@ -300,7 +194,7 @@ const update = async (id, archivoData) => {
     
     if (archivoData.url_archivo !== undefined) {
       fields.push(`url_archivo = $${paramIndex++}`);
-      values.push(encrypt(archivoData.url_archivo));
+      values.push(archivoData.url_archivo);
     }
     
     if (archivoData.tamanio_bytes !== undefined) {
@@ -310,7 +204,7 @@ const update = async (id, archivoData) => {
     
     if (archivoData.descripcion !== undefined) {
       fields.push(`descripcion = $${paramIndex++}`);
-      values.push(encrypt(archivoData.descripcion));
+      values.push(archivoData.descripcion);
     }
     
     if (fields.length === 0) {

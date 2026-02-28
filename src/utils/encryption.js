@@ -217,23 +217,20 @@ function decryptTurnoRows(rows) {
   return rows.map(decryptTurnoRow);
 }
 
-/** Campos de archivos_paciente que se cifran (ocultan vínculo paciente, nombre, ruta, descripción) */
+/** Campos de archivos_paciente (NO se cifran por decisión del cliente: permite backups y acceso directo a los archivos) */
 const ARCHIVO_ENCRYPT_FIELDS = ['nombre_archivo', 'url_archivo', 'descripcion'];
 
+/**
+ * No-op: los archivos adjuntos NO se cifran.
+ * Permite backups, recuperación y acceso directo a los archivos sin depender de la clave de cifrado.
+ */
 function encryptArchivoRow(row) {
-  if (!row) return row;
-  const out = { ...row };
-  for (const field of ARCHIVO_ENCRYPT_FIELDS) {
-    if (out[field] !== undefined && out[field] !== null && !isEncrypted(out[field])) {
-      out[field] = encrypt(out[field]);
-    }
-  }
-  if (out.paciente_id !== undefined && out.paciente_id !== null && !String(out.paciente_id).startsWith(ENCRYPTION_DETERMINISTIC_PREFIX)) {
-    out.paciente_id = encryptDeterministic(String(out.paciente_id));
-  }
-  return out;
+  return row;
 }
 
+/**
+ * Descifra fila de archivo. No-op si los datos están en claro (compatibilidad con datos legacy cifrados).
+ */
 function decryptArchivoRow(row) {
   if (!row) return row;
   const out = { ...row };

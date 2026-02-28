@@ -12,14 +12,10 @@ const { query } = require('../config/database');
 const {
   encrypt,
   encryptPacienteRow,
-  encryptArchivoRow,
-  encryptDeterministic,
   isEncryptionEnabled,
   PACIENTE_ENCRYPT_FIELDS,
   EVOLUCION_ENCRYPT_FIELDS,
-  ARCHIVO_ENCRYPT_FIELDS,
   ENCRYPTION_PREFIX,
-  ENCRYPTION_DETERMINISTIC_PREFIX,
 } = require('../utils/encryption');
 const logger = require('./logger');
 
@@ -104,33 +100,7 @@ async function syncNotas() {
   return { total: res.rows.length, updated };
 }
 
-async function syncArchivos() {
-  const res = await query(
-    `SELECT id, paciente_id, nombre_archivo, url_archivo, descripcion FROM archivos_paciente`
-  );
-  let updated = 0;
-  for (const row of res.rows) {
-    const hasPlainPaciente = row.paciente_id && !String(row.paciente_id).startsWith(ENCRYPTION_DETERMINISTIC_PREFIX);
-    const hasPlainArchivo = ARCHIVO_ENCRYPT_FIELDS.some((f) => needsEncryption(row[f]));
-    if (!hasPlainPaciente && !hasPlainArchivo) continue;
-
-    const enc = encryptArchivoRow(row);
-    await query(
-      `UPDATE archivos_paciente SET
-        paciente_id = $1, nombre_archivo = $2, url_archivo = $3, descripcion = $4
-       WHERE id = $5`,
-      [
-        enc.paciente_id ?? row.paciente_id,
-        enc.nombre_archivo ?? row.nombre_archivo,
-        enc.url_archivo ?? row.url_archivo,
-        enc.descripcion ?? row.descripcion,
-        row.id,
-      ]
-    );
-    updated++;
-  }
-  return { total: res.rows.length, updated };
-}
+// Los archivos NO se cifran (por decisión del cliente: permite backups y acceso directo).
 
 async function syncTurnos() {
   const res = await query(`SELECT id, motivo, razon_cancelacion FROM turnos`);
@@ -165,23 +135,21 @@ async function syncEncryptExistingData() {
   const ev = await syncEvoluciones();
   const notas = await syncNotas();
   const turnos = await syncTurnos();
-  const archivos = await syncArchivos();
 
-  const totalUpdated = pac.updated + ev.updated + notas.updated + turnos.updated + archivos.updated;
+  const totalUpdated = pac.updated + ev.updated + notas.updated + turnos.updated;
   if (totalUpdated > 0) {
     logger.info('Sync encrypt: datos cifrados al arranque', {
       pacientes: pac.updated,
       evoluciones: ev.updated,
       notas: notas.updated,
       turnos: turnos.updated,
-      archivos: archivos.updated,
       total: totalUpdated,
     });
   } else {
     logger.info('Sync encrypt: verificación completada (todos los datos ya estaban cifrados o no hay datos sensibles).');
   }
 
-  return { pacientes: pac, evoluciones: ev, notas, turnos, archivos };
+  return { pacientes: pac, evoluciones: ev, notas, turnos };
 }
 
 module.exports = { syncEncryptExistingData };

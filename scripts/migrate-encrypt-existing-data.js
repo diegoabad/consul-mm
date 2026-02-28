@@ -110,32 +110,13 @@ async function migrateTurnos() {
   return { total: res.rows.length, updated };
 }
 
+/**
+ * Archivos NO se cifran (por decisión del cliente: permite backups y acceso directo).
+ * Se omite la migración de archivos.
+ */
 async function migrateArchivos() {
-  const res = await query(
-    `SELECT id, paciente_id, nombre_archivo, url_archivo, descripcion FROM archivos_paciente`
-  );
-  let updated = 0;
-  for (const row of res.rows) {
-    const hasPlainPaciente = row.paciente_id && !String(row.paciente_id).startsWith(ENCRYPTION_DETERMINISTIC_PREFIX);
-    const hasPlainArchivo = ARCHIVO_ENCRYPT_FIELDS.some((f) => needsEncryption(row[f]));
-    if (!hasPlainPaciente && !hasPlainArchivo) continue;
-
-    const enc = encryptArchivoRow(row);
-    await query(
-      `UPDATE archivos_paciente SET
-        paciente_id = $1, nombre_archivo = $2, url_archivo = $3, descripcion = $4
-       WHERE id = $5`,
-      [
-        enc.paciente_id ?? row.paciente_id,
-        enc.nombre_archivo ?? row.nombre_archivo,
-        enc.url_archivo ?? row.url_archivo,
-        enc.descripcion ?? row.descripcion,
-        row.id,
-      ]
-    );
-    updated++;
-  }
-  return { total: res.rows.length, updated };
+  const res = await query(`SELECT COUNT(*)::int as total FROM archivos_paciente`);
+  return { total: res.rows[0]?.total ?? 0, updated: 0 };
 }
 
 async function migrateNotas() {
