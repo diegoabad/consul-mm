@@ -17,6 +17,10 @@ const logger = require('./utils/logger');
 
 const app = express();
 
+// Trust proxy: necesario cuando la app está detrás de un load balancer (Azure, Render, etc.)
+// para que express-rate-limit identifique correctamente la IP del cliente (X-Forwarded-For)
+app.set('trust proxy', 1);
+
 // Middlewares de seguridad (Helmet permite cross-origin para API consumida por SPA en otro dominio)
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' }

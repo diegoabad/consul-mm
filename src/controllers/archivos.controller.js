@@ -28,16 +28,20 @@ const UPLOADS_DIR = path.join(__dirname, '../../uploads');
  */
 async function filtrarArchivosExistentes(archivos) {
   if (!archivos || archivos.length === 0) return archivos;
+  // Con Azure Blob Storage, los archivos están en la nube; no validar con fs local
   if (azureStorage.isAzureConfigured()) return archivos;
   const baseDir = path.join(__dirname, '../..');
+  const skipOrphanDelete = process.env.SKIP_ORPHAN_DELETE === '1' || process.env.SKIP_ORPHAN_DELETE === 'true';
   const validos = [];
   for (const a of archivos) {
     if (!a.url_archivo) {
-      try {
-        await archivoModel.delete(a.id);
-        logger.info('Registro de archivo huérfano eliminado (sin url):', { id: a.id });
-      } catch (err) {
-        logger.error('Error eliminando registro huérfano:', err);
+      if (!skipOrphanDelete) {
+        try {
+          await archivoModel.delete(a.id);
+          logger.info('Registro de archivo huérfano eliminado (sin url):', { id: a.id });
+        } catch (err) {
+          logger.error('Error eliminando registro huérfano:', err);
+        }
       }
       continue;
     }
@@ -45,12 +49,15 @@ async function filtrarArchivosExistentes(archivos) {
     if (fs.existsSync(filePath)) {
       validos.push(a);
     } else {
-      try {
-        await archivoModel.delete(a.id);
-        logger.info('Registro de archivo huérfano eliminado (archivo físico no existe):', { id: a.id, url: a.url_archivo });
-      } catch (err) {
-        logger.error('Error eliminando registro huérfano:', err);
+      if (!skipOrphanDelete) {
+        try {
+          await archivoModel.delete(a.id);
+          logger.info('Registro de archivo huérfano eliminado (archivo físico no existe):', { id: a.id, url: a.url_archivo });
+        } catch (err) {
+          logger.error('Error eliminando registro huérfano:', err);
+        }
       }
+      // En cloud sin Azure Storage (disco efímero): no borrar, solo excluir de la lista
     }
   }
   return validos;

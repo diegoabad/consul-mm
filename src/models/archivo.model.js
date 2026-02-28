@@ -87,7 +87,7 @@ const findAll = async (filters = {}) => {
         u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido,
         u_subido.nombre as usuario_subido_nombre, u_subido.apellido as usuario_subido_apellido
       FROM archivos_paciente a
-      INNER JOIN pacientes p ON a.paciente_id = p.id
+      INNER JOIN pacientes p ON a.paciente_id::uuid = p.id
       INNER JOIN usuarios u_subido ON a.usuario_id = u_subido.id
       LEFT JOIN profesionales prof ON a.profesional_id = prof.id
       LEFT JOIN usuarios u_prof ON prof.usuario_id = u_prof.id
@@ -131,7 +131,7 @@ const findById = async (id) => {
           INNER JOIN usuarios u_subido ON a.usuario_id = u_subido.id
           LEFT JOIN profesionales prof ON a.profesional_id = prof.id
           LEFT JOIN usuarios u_prof ON prof.usuario_id = u_prof.id
-          WHERE a.id = $1`
+          WHERE a.id = $1::uuid`
         : `SELECT a.id, a.paciente_id, a.profesional_id, a.usuario_id, a.nombre_archivo, a.tipo_archivo,
             a.url_archivo, a.tamanio_bytes, a.descripcion, a.fecha_subida, a.fecha_actualizacion,
             p.nombre as paciente_nombre, p.apellido as paciente_apellido, p.dni as paciente_dni,
@@ -139,11 +139,11 @@ const findById = async (id) => {
             u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido,
             u_subido.nombre as usuario_subido_nombre, u_subido.apellido as usuario_subido_apellido
           FROM archivos_paciente a
-          INNER JOIN pacientes p ON a.paciente_id = p.id
+          INNER JOIN pacientes p ON a.paciente_id::uuid = p.id
           INNER JOIN usuarios u_subido ON a.usuario_id = u_subido.id
           LEFT JOIN profesionales prof ON a.profesional_id = prof.id
           LEFT JOIN usuarios u_prof ON prof.usuario_id = u_prof.id
-          WHERE a.id = $1`,
+          WHERE a.id = $1::uuid`,
       [id]
     );
     const row = result.rows[0] || null;
@@ -219,7 +219,7 @@ const findByProfesional = async (profesionalId) => {
         a.url_archivo, a.tamanio_bytes, a.descripcion, a.fecha_subida, a.fecha_actualizacion,
         p.nombre as paciente_nombre, p.apellido as paciente_apellido, p.dni as paciente_dni
       FROM archivos_paciente a
-      INNER JOIN pacientes p ON a.paciente_id = p.id
+      INNER JOIN pacientes p ON a.paciente_id::uuid = p.id
       WHERE a.profesional_id = $1
       ORDER BY a.fecha_subida DESC`,
       [profesionalId]
