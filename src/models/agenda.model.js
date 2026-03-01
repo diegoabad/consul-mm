@@ -193,19 +193,31 @@ function timeToMinutes(timeStr) {
  * Verificar si el profesional tiene agenda vigente para esa fecha/hora (día de semana + rango horario).
  * Usado para no permitir crear turnos en días u horarios que ya no atiende (ej. desactivó los lunes).
  * La hora se interpreta en hora local del servidor (asumir misma zona que el consultorio).
+ * Solo se consideran configuraciones cuya vigencia incluye la fecha del turno (vigencia_desde <= fecha <= vigencia_hasta).
  * @param {string} profesionalId - UUID del profesional
  * @param {Date} fechaHora - Fecha y hora de inicio del turno
  * @returns {Promise<boolean>} true si hay al menos una config vigente para ese día y esa hora dentro del rango
  */
 const vigentConfigCoversDateTime = async (profesionalId, fechaHora) => {
   try {
-    const configs = await findByProfesional(profesionalId, true, true);
+    // vigente=false para obtener todas las configs (incl. pasadas) y filtrar por la fecha del turno
+    const configs = await findByProfesional(profesionalId, true, false);
     const diaSemana = fechaHora.getDay();
     const minutos = fechaHora.getHours() * 60 + fechaHora.getMinutes();
+    const fechaStr = toDateOnly(fechaHora);
+
     for (const c of configs) {
-      if (c.dia_semana !== diaSemana) continue;
+      const diaC = Number(c.dia_semana);
+      if (diaC !== diaSemana) continue;
       // dia_semana 7 = "sin días fijos": placeholder con hora_inicio/hora_fin 00:00; no genera slots semanales
-      if (c.dia_semana === 7) continue;
+      if (diaC === 7) continue;
+
+      // La fecha del turno debe estar dentro del rango de vigencia de esta configuración
+      const desdeStr = toDateOnly(c.vigencia_desde);
+      const hastaStr = c.vigencia_hasta != null ? toDateOnly(c.vigencia_hasta) : null;
+      if (desdeStr && fechaStr < desdeStr) continue;
+      if (hastaStr && fechaStr > hastaStr) continue;
+
       const inicioMin = timeToMinutes(c.hora_inicio);
       const finMin = timeToMinutes(c.hora_fin);
       if (minutos >= inicioMin && minutos < finMin) return true;
