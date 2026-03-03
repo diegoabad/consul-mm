@@ -184,6 +184,7 @@ const PERMISOS_POR_ROL = {
     'turnos.cancelar',
     'turnos.confirmar',
     'agenda.leer',
+    'evoluciones.leer',
     'archivos.subir',
     'archivos.leer',
     'archivos.descargar',
