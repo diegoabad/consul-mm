@@ -49,6 +49,15 @@ router.get(
   pacientesController.getByDni
 );
 
+// GET /:id/historia-clinica/pdf - Exportar historia clínica en PDF
+router.get(
+  '/:id/historia-clinica/pdf',
+  authenticate,
+  requirePermission('evoluciones.leer'),
+  validateParams(pacienteParamsSchema),
+  pacientesController.exportarHistoriaClinicaPDF
+);
+
 // GET /:id/asignaciones - Listar profesionales asignados al paciente
 router.get(
   '/:id/asignaciones',

@@ -8,6 +8,7 @@
 const pacienteModel = require('../models/paciente.model');
 const profesionalModel = require('../models/profesional.model');
 const pacienteProfesionalModel = require('../models/pacienteProfesional.model');
+const historiaClinicaService = require('../services/historiaClinica.service');
 const logger = require('../utils/logger');
 const { buildResponse, normalizeToLowerCase } = require('../utils/helpers');
 
@@ -83,6 +84,57 @@ const getByDni = async (req, res, next) => {
     res.json(buildResponse(true, paciente, 'Paciente obtenido exitosamente'));
   } catch (error) {
     logger.error('Error en getByDni paciente:', error);
+    next(error);
+  }
+};
+
+/**
+ * Exportar historia clínica en PDF
+ * GET /pacientes/:id/historia-clinica/pdf?fecha_inicio=YYYY-MM-DD&fecha_fin=YYYY-MM-DD&orden=asc|desc
+ * Profesional: solo si está asignado al paciente, filtra sus evoluciones
+ */
+const exportarHistoriaClinicaPDF = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { fecha_inicio, fecha_fin, orden } = req.query;
+
+    const paciente = await pacienteModel.findById(id);
+    if (!paciente) {
+      return res.status(404).json(buildResponse(false, null, 'Paciente no encontrado'));
+    }
+
+    let profesionalId = null;
+    if (req.user.rol === 'profesional') {
+      const profesional = await profesionalModel.findByUserId(req.user.id);
+      if (!profesional) {
+        return res.status(403).json(buildResponse(false, null, 'No tiene acceso a este paciente'));
+      }
+      const pacienteIds = await pacienteProfesionalModel.getPacienteIdsByProfesional(profesional.id);
+      if (!pacienteIds.includes(id)) {
+        return res.status(403).json(buildResponse(false, null, 'No tiene acceso a este paciente'));
+      }
+      profesionalId = profesional.id;
+    }
+
+    const ordenValido = orden === 'desc' ? 'desc' : 'asc';
+    const options = {
+      profesionalId,
+      fechaInicio: fecha_inicio && /^\d{4}-\d{2}-\d{2}$/.test(fecha_inicio) ? fecha_inicio : null,
+      fechaFin: fecha_fin && /^\d{4}-\d{2}-\d{2}$/.test(fecha_fin) ? fecha_fin : null,
+      orden: ordenValido
+    };
+
+    const { buffer, filename } = await historiaClinicaService.exportarHistoriaClinicaPDF(id, options);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+    res.setHeader('Content-Length', buffer.length);
+    res.send(buffer);
+  } catch (error) {
+    if (error.code === 'PACIENTE_NOT_FOUND') {
+      return res.status(404).json(buildResponse(false, null, 'Paciente no encontrado'));
+    }
+    logger.error('Error en exportarHistoriaClinicaPDF:', error);
     next(error);
   }
 };
@@ -456,6 +508,7 @@ module.exports = {
   getByDni,
   getById,
   search,
+  exportarHistoriaClinicaPDF,
   create,
   update,
   delete: deletePaciente,
