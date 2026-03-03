@@ -40,6 +40,9 @@ const MIGRATIONS_ORDER = [
   '020_add_evolucion_anterior_id.sql',
   '021_pacientes_notas_evoluciones_text_for_encryption.sql',
   '022_archivos_paciente_encrypt_paciente_id.sql',
+  '023_profesionales_recordatorio_config.sql',
+  '024_turnos_recordatorio_enviado.sql',
+  '025_turnos_recordatorio_reintentos.sql',
 ];
 
 const SALT_ROUNDS = 10;

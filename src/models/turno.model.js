@@ -438,6 +438,8 @@ const update = async (id, turnoData) => {
     const allowedFields = [
       'fecha_hora_inicio', 'fecha_hora_fin', 'estado', 'motivo'
     ];
+
+    let fechaCambiada = false;
     
     for (const field of allowedFields) {
       if (turnoData[field] !== undefined) {
@@ -445,12 +447,19 @@ const update = async (id, turnoData) => {
         const val = turnoData[field];
         if (field === 'fecha_hora_inicio' || field === 'fecha_hora_fin') {
           params.push(val instanceof Date ? dateToUTCString(val) : dateToUTCString(new Date(val)));
+          if (field === 'fecha_hora_inicio') fechaCambiada = true;
         } else if (field === 'motivo') {
           params.push(encrypt(val ?? null));
         } else {
           params.push(val);
         }
       }
+    }
+
+    // Si se reprogramó la fecha, resetear el recordatorio para que vuelva a enviarse
+    if (fechaCambiada) {
+      updates.push(`recordatorio_enviado = false`);
+      updates.push(`recordatorio_enviado_at = NULL`);
     }
     
     if (updates.length === 0) {
@@ -591,6 +600,122 @@ const deleteById = async (id) => {
   }
 };
 
+/**
+ * Buscar turnos que necesitan recordatorio WhatsApp.
+ * Devuelve turnos confirmados/pendientes cuya fecha de inicio está dentro del rango
+ * [ahora + (horas_antes - margen), ahora + (horas_antes + margen)] para cada profesional
+ * que tenga recordatorio_activo = true, y que aún no hayan recibido el recordatorio.
+ * Se usa una consulta dinámica para contemplar distintos horas_antes por profesional.
+ * @returns {Promise<Array>}
+ */
+const findParaRecordatorio = async () => {
+  try {
+    const sql = `
+      SELECT
+        t.id, t.profesional_id, t.paciente_id,
+        t.fecha_hora_inicio::text as fecha_hora_inicio,
+        t.fecha_hora_fin::text as fecha_hora_fin,
+        t.estado, t.motivo,
+        p.especialidad as profesional_especialidad,
+        p.recordatorio_horas_antes,
+        u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido,
+        pac.nombre as paciente_nombre, pac.apellido as paciente_apellido,
+        pac.telefono as paciente_telefono
+      FROM turnos t
+      INNER JOIN profesionales p ON t.profesional_id = p.id
+      INNER JOIN usuarios u_prof ON p.usuario_id = u_prof.id
+      INNER JOIN pacientes pac ON t.paciente_id = pac.id
+      WHERE p.recordatorio_activo = true
+        AND t.recordatorio_enviado = false
+        AND t.recordatorio_intentos < 3
+        AND t.estado IN ('pendiente', 'confirmado')
+        AND t.fecha_hora_inicio > NOW()
+        AND t.fecha_hora_inicio <= NOW() + (p.recordatorio_horas_antes || ' hours')::interval + interval '30 minutes'
+        AND t.fecha_hora_inicio > NOW() + (p.recordatorio_horas_antes || ' hours')::interval - interval '30 minutes'
+      ORDER BY t.fecha_hora_inicio ASC
+    `;
+    const result = await query(sql);
+    return result.rows;
+  } catch (error) {
+    logger.error('Error en findParaRecordatorio:', error);
+    throw error;
+  }
+};
+
+/**
+ * Marcar turno como recordatorio enviado exitosamente
+ * @param {string} id - UUID del turno
+ */
+const marcarRecordatorioEnviado = async (id) => {
+  try {
+    const result = await query(
+      `UPDATE turnos
+       SET recordatorio_enviado = true, recordatorio_enviado_at = NOW(),
+           recordatorio_intentos = recordatorio_intentos + 1, recordatorio_ultimo_error = NULL
+       WHERE id = $1 RETURNING id`,
+      [id]
+    );
+    return result.rows[0] || null;
+  } catch (error) {
+    logger.error('Error en marcarRecordatorioEnviado:', error);
+    throw error;
+  }
+};
+
+/**
+ * Registrar intento fallido de envío de recordatorio
+ * @param {string} id - UUID del turno
+ * @param {string} errorMsg - Mensaje de error
+ */
+const marcarRecordatorioFallido = async (id, errorMsg) => {
+  try {
+    const result = await query(
+      `UPDATE turnos
+       SET recordatorio_intentos = recordatorio_intentos + 1,
+           recordatorio_ultimo_error = $1
+       WHERE id = $2 RETURNING id, recordatorio_intentos`,
+      [String(errorMsg).slice(0, 500), id]
+    );
+    return result.rows[0] || null;
+  } catch (error) {
+    logger.error('Error en marcarRecordatorioFallido:', error);
+    throw error;
+  }
+};
+
+/**
+ * Buscar los próximos turnos con recordatorio enviado para todos los pacientes (para el webhook).
+ * Devuelve los turnos próximos con recordatorio_enviado=true y estado pendiente/confirmado,
+ * para luego filtrar por teléfono en memoria (los teléfonos están cifrados en DB).
+ * @returns {Promise<Array>}
+ */
+const findProximosConRecordatorio = async () => {
+  try {
+    const sql = `
+      SELECT
+        t.id, t.profesional_id, t.paciente_id,
+        t.fecha_hora_inicio::text as fecha_hora_inicio,
+        t.estado,
+        u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido,
+        pac.nombre as paciente_nombre, pac.apellido as paciente_apellido,
+        pac.telefono as paciente_telefono
+      FROM turnos t
+      INNER JOIN profesionales p ON t.profesional_id = p.id
+      INNER JOIN usuarios u_prof ON p.usuario_id = u_prof.id
+      INNER JOIN pacientes pac ON t.paciente_id = pac.id
+      WHERE t.recordatorio_enviado = true
+        AND t.estado IN ('pendiente', 'confirmado')
+        AND t.fecha_hora_inicio > NOW()
+      ORDER BY t.fecha_hora_inicio ASC
+    `;
+    const result = await query(sql);
+    return decryptTurnoRows(result.rows);
+  } catch (error) {
+    logger.error('Error en findProximosConRecordatorio:', error);
+    throw error;
+  }
+};
+
 module.exports = {
   findAll,
   findAllPaginated,
@@ -604,5 +729,9 @@ module.exports = {
   cancel,
   confirm,
   complete,
-  deleteById
+  deleteById,
+  findParaRecordatorio,
+  marcarRecordatorioEnviado,
+  marcarRecordatorioFallido,
+  findProximosConRecordatorio,
 };

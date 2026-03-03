@@ -20,6 +20,7 @@ const findAll = async (filters = {}) => {
         p.id, p.usuario_id, p.matricula, p.especialidad, 
         p.estado_pago, p.bloqueado, p.razon_bloqueo, 
         p.fecha_ultimo_pago, p.fecha_inicio_contrato, p.monto_mensual, p.tipo_periodo_pago, p.observaciones,
+        p.recordatorio_activo, p.recordatorio_horas_antes,
         p.fecha_creacion, p.fecha_actualizacion,
         u.email, u.nombre, u.apellido, u.telefono, u.rol, u.activo as usuario_activo
       FROM profesionales p
@@ -111,6 +112,7 @@ const findAllPaginated = async (filters = {}) => {
       SELECT p.id, p.usuario_id, p.matricula, p.especialidad,
         p.estado_pago, p.bloqueado, p.razon_bloqueo,
         p.fecha_ultimo_pago, p.fecha_inicio_contrato, p.monto_mensual, p.tipo_periodo_pago, p.observaciones,
+        p.recordatorio_activo, p.recordatorio_horas_antes,
         p.fecha_creacion, p.fecha_actualizacion,
         u.email, u.nombre, u.apellido, u.telefono, u.rol, u.activo AS usuario_activo
       ${fromClause}
@@ -137,6 +139,7 @@ const findById = async (id) => {
         p.id, p.usuario_id, p.matricula, p.especialidad, 
         p.estado_pago, p.bloqueado, p.razon_bloqueo, 
         p.fecha_ultimo_pago, p.fecha_inicio_contrato, p.monto_mensual, p.tipo_periodo_pago, p.observaciones,
+        p.recordatorio_activo, p.recordatorio_horas_antes,
         p.fecha_creacion, p.fecha_actualizacion,
         u.email, u.nombre, u.apellido, u.telefono, u.rol, u.activo as usuario_activo
       FROM profesionales p
@@ -163,6 +166,7 @@ const findByUserId = async (usuarioId) => {
         p.id, p.usuario_id, p.matricula, p.especialidad, 
         p.estado_pago, p.bloqueado, p.razon_bloqueo, 
         p.fecha_ultimo_pago, p.fecha_inicio_contrato, p.monto_mensual, p.tipo_periodo_pago, p.observaciones,
+        p.recordatorio_activo, p.recordatorio_horas_antes,
         p.fecha_creacion, p.fecha_actualizacion,
         u.email, u.nombre, u.apellido, u.telefono, u.rol, u.activo as usuario_activo
       FROM profesionales p
@@ -372,6 +376,28 @@ const getBlocked = async () => {
   }
 };
 
+/**
+ * Actualizar configuración de recordatorio WhatsApp de un profesional
+ * @param {string} id - UUID del profesional
+ * @param {Object} config - { recordatorio_activo, recordatorio_horas_antes }
+ * @returns {Promise<Object|null>}
+ */
+const updateRecordatorioConfig = async (id, { recordatorio_activo, recordatorio_horas_antes }) => {
+  try {
+    const result = await query(
+      `UPDATE profesionales
+       SET recordatorio_activo = $1, recordatorio_horas_antes = $2, fecha_actualizacion = NOW()
+       WHERE id = $3
+       RETURNING id, recordatorio_activo, recordatorio_horas_antes`,
+      [recordatorio_activo, recordatorio_horas_antes, id]
+    );
+    return result.rows[0] || null;
+  } catch (error) {
+    logger.error('Error en updateRecordatorioConfig:', error);
+    throw error;
+  }
+};
+
 module.exports = {
   findAll,
   findAllPaginated,
@@ -383,5 +409,6 @@ module.exports = {
   block,
   unblock,
   updateLastPayment,
-  getBlocked
+  getBlocked,
+  updateRecordatorioConfig,
 };

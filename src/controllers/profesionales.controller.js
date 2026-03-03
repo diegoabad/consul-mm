@@ -348,6 +348,66 @@ const getBlocked = async (req, res, next) => {
   }
 };
 
+/**
+ * Obtener configuración de recordatorio de un profesional
+ */
+const getRecordatorioConfig = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const profesional = await profesionalModel.findById(id);
+    if (!profesional) {
+      return res.status(404).json(buildResponse(false, null, 'Profesional no encontrado'));
+    }
+    const config = {
+      recordatorio_activo: profesional.recordatorio_activo ?? false,
+      recordatorio_horas_antes: profesional.recordatorio_horas_antes ?? 24,
+    };
+    res.json(buildResponse(true, config, 'Configuración de recordatorio obtenida'));
+  } catch (error) {
+    logger.error('Error en getRecordatorioConfig:', error);
+    next(error);
+  }
+};
+
+/**
+ * Actualizar configuración de recordatorio de un profesional
+ */
+const updateRecordatorioConfig = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { recordatorio_activo, recordatorio_horas_antes } = req.body;
+
+    if (typeof recordatorio_activo !== 'boolean') {
+      return res.status(400).json(buildResponse(false, null, 'recordatorio_activo debe ser un booleano'));
+    }
+    const horas = parseInt(recordatorio_horas_antes, 10);
+    if (isNaN(horas) || horas < 2 || horas > 48) {
+      return res.status(400).json(buildResponse(false, null, 'recordatorio_horas_antes debe ser un número entre 2 y 48'));
+    }
+
+    const profesional = await profesionalModel.findById(id);
+    if (!profesional) {
+      return res.status(404).json(buildResponse(false, null, 'Profesional no encontrado'));
+    }
+
+    // Un profesional solo puede modificar su propia config; un admin puede modificar cualquiera
+    const usuarioRol = req.user?.rol;
+    const usuarioId = req.user?.id;
+    if (usuarioRol === 'profesional' && profesional.usuario_id !== usuarioId) {
+      return res.status(403).json(buildResponse(false, null, 'No tenés permiso para modificar este profesional'));
+    }
+
+    const updated = await profesionalModel.updateRecordatorioConfig(id, {
+      recordatorio_activo,
+      recordatorio_horas_antes: horas,
+    });
+    res.json(buildResponse(true, updated, 'Configuración de recordatorio actualizada'));
+  } catch (error) {
+    logger.error('Error en updateRecordatorioConfig:', error);
+    next(error);
+  }
+};
+
 module.exports = {
   getAll,
   getById,
@@ -357,5 +417,7 @@ module.exports = {
   delete: deleteProfesional,
   block,
   unblock,
-  getBlocked
+  getBlocked,
+  getRecordatorioConfig,
+  updateRecordatorioConfig,
 };

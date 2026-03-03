@@ -18,6 +18,8 @@ const PORT = process.env.PORT || 5000;
 
 // Cron: sync local → Storage una vez al día (ej. 3:00 AM). Variable opcional: CRON_SYNC_STORAGE (ej. "0 3 * * *")
 const CRON_SYNC_STORAGE = process.env.CRON_SYNC_STORAGE || '0 3 * * *';
+// Cron: recordatorios WhatsApp cada 30 minutos. Variable opcional: CRON_RECORDATORIOS (ej. "*/30 * * * *")
+const CRON_RECORDATORIOS = process.env.CRON_RECORDATORIOS || '*/15 * * * *';
 
 // Verificar conexión a la base de datos
 const testConnection = async () => {
@@ -55,7 +57,15 @@ const startServer = async () => {
         logger.info('Cron: ejecutando sync local→Storage (respaldo → Azure)');
         archivosController.syncAllLocalToStorage().catch(e => logger.error('Sync local→Storage (cron):', e));
       });
-      server.on('close', () => { cronJob.stop(); });
+
+      // Cron de recordatorios WhatsApp: cada 30 minutos
+      const { procesarRecordatorios } = require('./src/services/recordatorio.service');
+      const cronRecordatorios = cron.schedule(CRON_RECORDATORIOS, () => {
+        logger.info('Cron: procesando recordatorios WhatsApp...');
+        procesarRecordatorios().catch(e => logger.error('Cron recordatorios WhatsApp:', e));
+      });
+
+      server.on('close', () => { cronJob.stop(); cronRecordatorios.stop(); });
     });
     
     // Manejo de cierre graceful

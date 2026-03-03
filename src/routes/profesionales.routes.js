@@ -101,4 +101,22 @@ router.patch(
   profesionalesController.unblock
 );
 
+// GET /:id/recordatorio-config - Obtener configuración de recordatorio WhatsApp
+router.get(
+  '/:id/recordatorio-config',
+  authenticate,
+  requirePermission('profesionales.leer'),
+  validateParams(profesionalParamsSchema),
+  profesionalesController.getRecordatorioConfig
+);
+
+// PATCH /:id/recordatorio-config - Actualizar configuración de recordatorio WhatsApp
+// Sin requirePermission: el controller valida que el profesional solo pueda editar su propia config
+router.patch(
+  '/:id/recordatorio-config',
+  authenticate,
+  validateParams(profesionalParamsSchema),
+  profesionalesController.updateRecordatorioConfig
+);
+
 module.exports = router;

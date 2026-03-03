@@ -8,6 +8,10 @@
 const express = require('express');
 const router = express.Router();
 const { getMigrationsStatus } = require('../config/bootstrap-db');
+const { authenticate } = require('../middlewares/auth.middleware');
+const { requirePermission } = require('../middlewares/permissions.middleware');
+const recordatorioService = require('../services/recordatorio.service');
+const turnoModel = require('../models/turno.model');
 
 // Importar rutas
 const authRoutes = require('./auth.routes');
@@ -24,6 +28,7 @@ const notificacionesRoutes = require('./notificaciones.routes');
 const especialidadesRoutes = require('./especialidades.routes');
 const obrasSocialesRoutes = require('./obras-sociales.routes');
 const logsRoutes = require('./logs.routes');
+const whatsappRoutes = require('./whatsapp.routes');
 
 // Health check (incluye estado de migraciones: si hay pendientes, se aplican al arrancar el servidor)
 router.get('/health', async (req, res) => {
@@ -61,5 +66,34 @@ router.use('/notificaciones', notificacionesRoutes);
 router.use('/especialidades', especialidadesRoutes);
 router.use('/obras-sociales', obrasSocialesRoutes);
 router.use('/logs', logsRoutes);
+router.use('/webhooks/whatsapp', whatsappRoutes);
+
+// Rutas públicas de confirmación/cancelación de turno por URL
+// GET /api/webhooks/turno/:id/confirmar  y  /cancelar
+const { confirmarPorUrl, cancelarPorUrl } = require('../controllers/whatsapp.controller');
+router.get('/webhooks/turno/:id/confirmar', confirmarPorUrl);
+router.get('/webhooks/turno/:id/cancelar', cancelarPorUrl);
+
+// ─── Endpoint de prueba (solo admin/dev) ───────────────────────────────────────
+// POST /api/test/recordatorios/disparar  → corre el job de recordatorios ahora
+router.post(
+  '/test/recordatorios/disparar',
+  authenticate,
+  requirePermission('profesionales.actualizar'), // solo admin
+  async (_req, res) => {
+    const antes = await turnoModel.findParaRecordatorio();
+    await recordatorioService.procesarRecordatorios();
+    res.json({
+      success: true,
+      message: `Job ejecutado. Turnos encontrados para recordatorio: ${antes.length}`,
+      turnos: antes.map((t) => ({
+        id: t.id,
+        paciente: `${t.paciente_nombre} ${t.paciente_apellido}`,
+        fecha: t.fecha_hora_inicio,
+        intentos: t.recordatorio_intentos,
+      })),
+    });
+  }
+);
 
 module.exports = router;

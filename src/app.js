@@ -64,6 +64,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Servir archivos estáticos desde /uploads
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+app.use('/public', express.static(path.join(__dirname, '../public')));
 
 // Rutas
 app.use('/api', routes);

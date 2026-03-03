@@ -13,6 +13,7 @@ const bloqueModel = require('../models/bloque.model');
 const agendaModel = require('../models/agenda.model');
 const excepcionAgendaModel = require('../models/excepcionAgenda.model');
 const emailService = require('../services/email.service');
+const { enviarRecordatorioTurno } = require('../services/whatsapp.service');
 const logModel = require('../models/log.model');
 const logger = require('../utils/logger');
 const { buildResponse } = require('../utils/helpers');
@@ -316,6 +317,16 @@ const create = async (req, res, next) => {
           }
         });
     }
+    // Envío de WhatsApp de prueba: apenas se crea el turno se manda el recordatorio (SOLO PARA PRUEBAS)
+    if (process.env.WHATSAPP_RECORDATORIO_AL_CREAR === 'true') {
+      const turnoParaWsp = await turnoModel.findById(nuevoTurno.id);
+      if (turnoParaWsp) {
+        enviarRecordatorioTurno(turnoParaWsp)
+          .then(() => turnoModel.marcarRecordatorioEnviado(turnoParaWsp.id))
+          .catch((err) => logger.error('Error enviando WhatsApp al crear turno (prueba):', err.message));
+      }
+    }
+
     res.status(201).json(buildResponse(true, turnoCompleto, 'Turno creado exitosamente'));
   } catch (error) {
     logger.error('Error en create turno:', error);
