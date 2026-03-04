@@ -31,10 +31,12 @@ const logsRoutes = require('./logs.routes');
 const whatsappRoutes = require('./whatsapp.routes');
 const dashboardRoutes = require('./dashboard.routes');
 const recordatoriosRoutes = require('./recordatorios.routes');
+const foroRoutes = require('./foro.routes');
 
 // Health check (incluye estado de migraciones: si hay pendientes, se aplican al arrancar el servidor)
 router.get('/health', async (req, res) => {
   let migrationsStatus = null;
+  let foroTables = null;
   try {
     const status = await getMigrationsStatus();
     migrationsStatus = {
@@ -42,6 +44,15 @@ router.get('/health', async (req, res) => {
       pendingCount: status.pending.length,
       pending: status.pending.length > 0 ? status.pending : undefined
     };
+    // En desarrollo: verificar si existen las tablas del foro
+    if (process.env.NODE_ENV !== 'production') {
+      const { pool } = require('../config/database');
+      const r = await pool.query(`
+        SELECT table_name FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name IN ('foro_tema', 'foro_post')
+      `);
+      foroTables = { exist: r.rows.length === 2, tables: r.rows.map((x) => x.table_name) };
+    }
   } catch (err) {
     migrationsStatus = { error: err.message };
   }
@@ -49,7 +60,8 @@ router.get('/health', async (req, res) => {
     success: true,
     message: 'API funcionando correctamente',
     timestamp: new Date().toISOString(),
-    migrations: migrationsStatus
+    migrations: migrationsStatus,
+    ...(foroTables && { foroTables })
   });
 });
 
@@ -71,6 +83,7 @@ router.use('/logs', logsRoutes);
 router.use('/webhooks/whatsapp', whatsappRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/recordatorios', recordatoriosRoutes);
+router.use('/foro', foroRoutes);
 
 // Rutas públicas de confirmación/cancelación de turno por URL
 // GET /api/webhooks/turno/:id/confirmar  y  /cancelar

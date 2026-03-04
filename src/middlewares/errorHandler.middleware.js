@@ -38,7 +38,8 @@ const mapPostgresError = (error) => {
       return {
         message: 'Tabla no encontrada',
         code: 'TABLE_NOT_FOUND',
-        statusCode: 500
+        statusCode: 500,
+        ...(process.env.NODE_ENV !== 'production' && { detail: error.message, table: error.table })
       };
     case '42703': // undefined_column
       return {
@@ -149,13 +150,14 @@ const errorHandler = (err, req, res, next) => {
     logger.warn('Error de validación:', { path: req.path, error: err.details });
   }
   // Error de PostgreSQL
-  else if (err.code && err.code.startsWith('23') || err.code && err.code.startsWith('42')) {
+  else if (err.code && (err.code.startsWith('23') || err.code.startsWith('42'))) {
     const mappedError = mapPostgresError(err);
     statusCode = mappedError.statusCode;
     errorResponse.error = {
       message: mappedError.message,
       code: mappedError.code,
-      ...(mappedError.detail && { detail: mappedError.detail })
+      ...(mappedError.detail && { detail: mappedError.detail }),
+      ...(mappedError.table && { table: mappedError.table })
     };
     logger.error('Error de PostgreSQL:', { code: err.code, message: err.message });
   }

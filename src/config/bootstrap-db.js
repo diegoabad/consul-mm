@@ -47,6 +47,9 @@ const MIGRATIONS_ORDER = [
   '027_pacientes_contacto_emergencia_2.sql',
   '028_pacientes_notificaciones_activas.sql',
   '029_turnos_soft_delete.sql',
+  '030_foro_profesional.sql',
+  '031_foro_post_parent_id.sql',
+  '032_foro_post_indexes.sql',
 ];
 
 const SALT_ROUNDS = 10;

@@ -6,6 +6,7 @@
  */
 
 const usuarioModel = require('../models/usuario.model');
+const permissionsService = require('../services/permissions.service');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
@@ -106,7 +107,7 @@ const register = async (req, res, next) => {
 };
 
 /**
- * Obtener perfil del usuario autenticado
+ * Obtener perfil del usuario autenticado (incluye permisos para ocultar menú según acceso)
  */
 const getProfile = async (req, res, next) => {
   try {
@@ -116,7 +117,10 @@ const getProfile = async (req, res, next) => {
       return res.status(404).json(buildResponse(false, null, 'Usuario no encontrado'));
     }
     
-    res.json(buildResponse(true, usuario, 'Perfil obtenido exitosamente'));
+    const permisos = await permissionsService.getUserPermissions(usuario.id, usuario.rol);
+    const profile = { ...usuario, permisos };
+    
+    res.json(buildResponse(true, profile, 'Perfil obtenido exitosamente'));
   } catch (error) {
     logger.error('Error en getProfile:', error);
     next(error);

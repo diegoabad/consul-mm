@@ -123,7 +123,13 @@ const PERMISOS = [
   // Notificaciones
   'notificaciones.crear',
   'notificaciones.leer',
-  'notificaciones.enviar'
+  'notificaciones.enviar',
+
+  // Foro profesional
+  'foro.leer',
+  'foro.crear_tema',
+  'foro.responder',
+  'foro.moderar'
 ];
 
 // Permisos por defecto según rol
@@ -166,9 +172,11 @@ const PERMISOS_POR_ROL = {
     'notas.leer',
     'notas.actualizar',
     'notas.eliminar',
-    'pagos.leer'
+    'pagos.leer',
+    'foro.leer',
+    'foro.responder'
   ],
-  
+
   [ROLES.SECRETARIA]: [
     'profesionales.leer', // necesario para Turnos, Agendas, asignar pacientes, etc.
     'usuarios.leer',
@@ -191,9 +199,11 @@ const PERMISOS_POR_ROL = {
     'notas.crear',
     'notas.leer',
     'notas.actualizar',
-    'pagos.leer'
+    'pagos.leer',
+    'foro.leer',
+    'foro.responder'
   ],
-  
+
 };
 
 module.exports = {

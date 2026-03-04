@@ -78,6 +78,28 @@ const findByUsuarioAndPermiso = async (usuarioId, permiso) => {
   }
 };
 
+/**
+ * Obtener permisos personalizados para múltiples usuarios y un permiso específico.
+ * Útil para evitar N+1 al verificar el mismo permiso para muchos usuarios.
+ * @returns {Map<string, boolean>} Map de usuario_id -> activo (true/false)
+ */
+const findForoLeerByUsuarios = async (usuarioIds) => {
+  if (!usuarioIds?.length) return new Map();
+  try {
+    const result = await query(
+      `SELECT usuario_id, activo FROM permisos_usuario 
+       WHERE usuario_id = ANY($1::uuid[]) AND permiso = 'foro.leer'`,
+      [usuarioIds]
+    );
+    const map = new Map();
+    result.rows.forEach((r) => map.set(r.usuario_id, r.activo === true));
+    return map;
+  } catch (error) {
+    logger.error('Error en findForoLeerByUsuarios:', error);
+    throw error;
+  }
+};
+
 const create = async (permisoData) => {
   try {
     const { usuario_id, permiso, activo = true } = permisoData;
@@ -170,6 +192,7 @@ module.exports = {
   findById,
   findByUsuario,
   findByUsuarioAndPermiso,
+  findForoLeerByUsuarios,
   create,
   update,
   delete: deletePermiso,

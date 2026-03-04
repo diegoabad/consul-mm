@@ -93,9 +93,36 @@ const canAccess = async (usuarioId, rol, permiso) => {
   return await hasPermission(usuarioId, rol, permiso);
 };
 
+/**
+ * Verificar permiso foro.leer para múltiples usuarios en una sola consulta.
+ * @param {Array<{usuario_id: string, rol: string}>} usuarios
+ * @returns {Promise<Map<string, boolean>>} Map de usuario_id -> tiene foro.leer
+ */
+const hasForoLeerBatch = async (usuarios) => {
+  if (!usuarios?.length) return new Map();
+  try {
+    const usuarioIds = usuarios.map((u) => u.usuario_id);
+    const customMap = await permisoModel.findForoLeerByUsuarios(usuarioIds);
+    const result = new Map();
+    const roleHasForo = (rol) => (getPermissionsForRole(rol) || []).includes('foro.leer');
+    for (const u of usuarios) {
+      if (customMap.has(u.usuario_id)) {
+        result.set(u.usuario_id, customMap.get(u.usuario_id));
+      } else {
+        result.set(u.usuario_id, roleHasForo(u.rol || 'profesional'));
+      }
+    }
+    return result;
+  } catch (error) {
+    logger.error('Error en hasForoLeerBatch:', error);
+    throw error;
+  }
+};
+
 module.exports = {
   hasPermission,
   getPermissionsForRole,
   getUserPermissions,
-  canAccess
+  canAccess,
+  hasForoLeerBatch
 };

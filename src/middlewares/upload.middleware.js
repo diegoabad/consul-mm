@@ -51,11 +51,21 @@ const storage = multer.diskStorage({
 /**
  * Filtro de tipos de archivo permitidos
  */
+const TIPOS_IMAGEN = ['image/jpeg', 'image/png', 'image/jpg'];
+
 const fileFilter = (req, file, cb) => {
   if (TIPOS_ARCHIVO.includes(file.mimetype)) {
     cb(null, true);
   } else {
     cb(new Error(`Tipo de archivo no permitido. Tipos permitidos: ${TIPOS_ARCHIVO.join(', ')}`), false);
+  }
+};
+
+const imageFileFilter = (req, file, cb) => {
+  if (TIPOS_IMAGEN.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error('Solo se permiten imágenes (JPEG, PNG)'), false);
   }
 };
 
@@ -65,9 +75,13 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
-  limits: {
-    fileSize: MAX_FILE_SIZE
-  }
+  limits: { fileSize: MAX_FILE_SIZE }
+});
+
+const uploadImageOnly = multer({
+  storage: storage,
+  fileFilter: imageFileFilter,
+  limits: { fileSize: MAX_FILE_SIZE }
 });
 
 /**
@@ -108,8 +122,9 @@ const handleMulterError = (err, req, res, next) => {
 
 module.exports = {
   upload,
+  uploadImageOnly,
   handleMulterError,
-  // Helpers para uso común
   uploadSingle: (fieldName) => upload.single(fieldName),
+  uploadSingleImage: (fieldName) => uploadImageOnly.single(fieldName),
   uploadMultiple: (fieldName, maxCount = 5) => upload.array(fieldName, maxCount)
 };
