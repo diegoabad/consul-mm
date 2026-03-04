@@ -42,12 +42,12 @@ const findAll = async (filters = {}) => {
         t.fecha_creacion, t.fecha_actualizacion,
         p.matricula, p.especialidad as profesional_especialidad,
         u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido, u_prof.email as profesional_email,
-        pac.nombre as paciente_nombre, pac.apellido as paciente_apellido, pac.dni as paciente_dni, pac.telefono as paciente_telefono, pac.email as paciente_email
+        pac.nombre as paciente_nombre, pac.apellido as paciente_apellido, pac.dni as paciente_dni, pac.telefono as paciente_telefono, pac.whatsapp as paciente_whatsapp, pac.email as paciente_email
       FROM turnos t
       INNER JOIN profesionales p ON t.profesional_id = p.id
       INNER JOIN usuarios u_prof ON p.usuario_id = u_prof.id
       INNER JOIN pacientes pac ON t.paciente_id = pac.id
-      WHERE 1=1
+      WHERE t.deleted_at IS NULL
     `;
     const params = [];
     let paramIndex = 1;
@@ -106,7 +106,7 @@ const findAllPaginated = async (filters = {}) => {
     const offset = (Math.max(1, page) - 1) * Math.min(100, Math.max(1, limit));
     const limitVal = Math.min(100, Math.max(1, limit));
 
-    let where = ' WHERE 1=1';
+    let where = ' WHERE t.deleted_at IS NULL';
     const params = [];
     let paramIndex = 1;
 
@@ -119,8 +119,12 @@ const findAllPaginated = async (filters = {}) => {
       params.push(filters.paciente_id);
     }
     if (filters.estado) {
-      where += ` AND t.estado = $${paramIndex++}`;
-      params.push(filters.estado);
+      if (filters.estado === 'activos') {
+        where += ` AND t.estado IN ('${ESTADOS_TURNO.PENDIENTE}', '${ESTADOS_TURNO.CONFIRMADO}', '${ESTADOS_TURNO.COMPLETADO}', '${ESTADOS_TURNO.AUSENTE}')`;
+      } else {
+        where += ` AND t.estado = $${paramIndex++}`;
+        params.push(filters.estado);
+      }
     }
     if (filters.fecha_inicio) {
       where += ` AND t.fecha_hora_inicio >= $${paramIndex++}`;
@@ -152,7 +156,7 @@ const findAllPaginated = async (filters = {}) => {
         t.fecha_creacion, t.fecha_actualizacion,
         p.matricula, p.especialidad as profesional_especialidad,
         u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido, u_prof.email as profesional_email,
-        pac.nombre as paciente_nombre, pac.apellido as paciente_apellido, pac.dni as paciente_dni, pac.telefono as paciente_telefono, pac.email as paciente_email
+        pac.nombre as paciente_nombre, pac.apellido as paciente_apellido, pac.dni as paciente_dni, pac.telefono as paciente_telefono, pac.whatsapp as paciente_whatsapp, pac.email as paciente_email
       ${fromClause}
       ORDER BY t.fecha_hora_inicio DESC
       LIMIT $${paramIndex++} OFFSET $${paramIndex}
@@ -184,12 +188,12 @@ const findById = async (id) => {
         t.fecha_creacion, t.fecha_actualizacion,
         p.matricula, p.especialidad as profesional_especialidad,
         u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido, u_prof.email as profesional_email,
-        pac.nombre as paciente_nombre, pac.apellido as paciente_apellido, pac.dni as paciente_dni, pac.telefono as paciente_telefono, pac.email as paciente_email
+        pac.nombre as paciente_nombre, pac.apellido as paciente_apellido, pac.dni as paciente_dni, pac.telefono as paciente_telefono, pac.whatsapp as paciente_whatsapp, pac.email as paciente_email
       FROM turnos t
       INNER JOIN profesionales p ON t.profesional_id = p.id
       INNER JOIN usuarios u_prof ON p.usuario_id = u_prof.id
       INNER JOIN pacientes pac ON t.paciente_id = pac.id
-      WHERE t.id = $1`,
+      WHERE t.id = $1 AND t.deleted_at IS NULL`,
       [id]
     );
     const row = result.rows[0] || null;
@@ -219,10 +223,10 @@ const findByProfesional = async (profesionalId, fechaInicio = null, fechaFin = n
         t.id, t.profesional_id, t.paciente_id, t.fecha_hora_inicio::text as fecha_hora_inicio, t.fecha_hora_fin::text as fecha_hora_fin,
         t.estado, t.sobreturno, t.motivo, t.cancelado_por, t.razon_cancelacion,
         t.fecha_creacion, t.fecha_actualizacion,
-        pac.nombre as paciente_nombre, pac.apellido as paciente_apellido, pac.dni as paciente_dni, pac.telefono as paciente_telefono
+        pac.nombre as paciente_nombre, pac.apellido as paciente_apellido, pac.dni as paciente_dni, pac.telefono as paciente_telefono, pac.whatsapp as paciente_whatsapp
       FROM turnos t
       INNER JOIN pacientes pac ON t.paciente_id = pac.id
-      WHERE t.profesional_id = $1
+      WHERE t.profesional_id = $1 AND t.deleted_at IS NULL
     `;
     const params = [profesionalId];
     let paramIndex = 2;
@@ -271,7 +275,7 @@ const findByPaciente = async (pacienteId, fechaInicio = null, fechaFin = null) =
       FROM turnos t
       INNER JOIN profesionales p ON t.profesional_id = p.id
       INNER JOIN usuarios u_prof ON p.usuario_id = u_prof.id
-      WHERE t.paciente_id = $1
+      WHERE t.paciente_id = $1 AND t.deleted_at IS NULL
     `;
     const params = [pacienteId];
     let paramIndex = 2;
@@ -315,6 +319,7 @@ const checkAvailability = async (profesionalId, fechaHoraInicio, fechaHoraFin, e
       SELECT COUNT(*) as count
       FROM turnos
       WHERE profesional_id = $1
+        AND deleted_at IS NULL
         AND estado NOT IN ($2, $3)
         AND (
           (fecha_hora_inicio < $4 AND fecha_hora_fin > $5) OR
@@ -354,6 +359,7 @@ const hasPacienteOverlap = async (profesionalId, pacienteId, fechaHoraInicio, fe
       `SELECT COUNT(*) as count
        FROM turnos
        WHERE profesional_id = $1 AND paciente_id = $2
+         AND deleted_at IS NULL
          AND estado NOT IN ($3, $4)
          AND (
            (fecha_hora_inicio < $5 AND fecha_hora_fin > $6) OR
@@ -583,14 +589,14 @@ const complete = async (id) => {
 };
 
 /**
- * Eliminar turno (hard delete)
+ * Eliminar turno (soft delete: marca deleted_at en lugar de borrar físicamente)
  * @param {string} id - UUID del turno
- * @returns {Promise<Object|null>} Turno eliminado o null
+ * @returns {Promise<Object|null>} Turno marcado como eliminado o null
  */
 const deleteById = async (id) => {
   try {
     const result = await query(
-      'DELETE FROM turnos WHERE id = $1 RETURNING id',
+      'UPDATE turnos SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL RETURNING id',
       [id]
     );
     return result.rows[0] || null;
@@ -620,24 +626,60 @@ const findParaRecordatorio = async () => {
         p.recordatorio_horas_antes,
         u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido,
         pac.nombre as paciente_nombre, pac.apellido as paciente_apellido,
-        pac.telefono as paciente_telefono
+        pac.telefono as paciente_telefono, pac.whatsapp as paciente_whatsapp,
+        pac.notificaciones_activas as paciente_notificaciones_activas
       FROM turnos t
       INNER JOIN profesionales p ON t.profesional_id = p.id
       INNER JOIN usuarios u_prof ON p.usuario_id = u_prof.id
       INNER JOIN pacientes pac ON t.paciente_id = pac.id
-      WHERE p.recordatorio_activo = true
+      WHERE t.deleted_at IS NULL
+        AND p.recordatorio_activo = true
         AND t.recordatorio_enviado = false
         AND t.recordatorio_intentos < 3
         AND t.estado IN ('pendiente', 'confirmado')
+        AND pac.notificaciones_activas = true
         AND t.fecha_hora_inicio > NOW()
         AND t.fecha_hora_inicio <= NOW() + (p.recordatorio_horas_antes || ' hours')::interval + interval '30 minutes'
         AND t.fecha_hora_inicio > NOW() + (p.recordatorio_horas_antes || ' hours')::interval - interval '30 minutes'
       ORDER BY t.fecha_hora_inicio ASC
     `;
     const result = await query(sql);
-    return result.rows;
+    return decryptTurnoRows(result.rows);
   } catch (error) {
     logger.error('Error en findParaRecordatorio:', error);
+    throw error;
+  }
+};
+
+/**
+ * Buscar un turno por ID con todos los datos necesarios para enviar recordatorio.
+ * Usado para el envío manual desde el panel.
+ * @param {string} id - UUID del turno
+ */
+const findParaRecordatorioById = async (id) => {
+  try {
+    const result = await query(
+      `SELECT
+        t.id, t.profesional_id, t.paciente_id,
+        t.fecha_hora_inicio::text as fecha_hora_inicio,
+        t.fecha_hora_fin::text as fecha_hora_fin,
+        t.estado, t.motivo,
+        p.especialidad as profesional_especialidad,
+        p.recordatorio_activo, p.recordatorio_horas_antes,
+        u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido,
+        pac.nombre as paciente_nombre, pac.apellido as paciente_apellido,
+        pac.telefono as paciente_telefono, pac.whatsapp as paciente_whatsapp,
+        pac.notificaciones_activas as paciente_notificaciones_activas
+      FROM turnos t
+      INNER JOIN profesionales p ON t.profesional_id = p.id
+      INNER JOIN usuarios u_prof ON p.usuario_id = u_prof.id
+      INNER JOIN pacientes pac ON t.paciente_id = pac.id
+      WHERE t.id = $1 AND t.deleted_at IS NULL`,
+      [id]
+    );
+    return result.rows[0] ? decryptTurnoRow(result.rows[0]) : null;
+  } catch (error) {
+    logger.error('Error en findParaRecordatorioById:', error);
     throw error;
   }
 };
@@ -698,12 +740,13 @@ const findProximosConRecordatorio = async () => {
         t.estado,
         u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido,
         pac.nombre as paciente_nombre, pac.apellido as paciente_apellido,
-        pac.telefono as paciente_telefono
+        pac.telefono as paciente_telefono, pac.whatsapp as paciente_whatsapp
       FROM turnos t
       INNER JOIN profesionales p ON t.profesional_id = p.id
       INNER JOIN usuarios u_prof ON p.usuario_id = u_prof.id
       INNER JOIN pacientes pac ON t.paciente_id = pac.id
-      WHERE t.recordatorio_enviado = true
+      WHERE t.deleted_at IS NULL
+        AND t.recordatorio_enviado = true
         AND t.estado IN ('pendiente', 'confirmado')
         AND t.fecha_hora_inicio > NOW()
       ORDER BY t.fecha_hora_inicio ASC
@@ -731,6 +774,7 @@ module.exports = {
   complete,
   deleteById,
   findParaRecordatorio,
+  findParaRecordatorioById,
   marcarRecordatorioEnviado,
   marcarRecordatorioFallido,
   findProximosConRecordatorio,

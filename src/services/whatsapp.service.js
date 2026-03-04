@@ -3,6 +3,7 @@
  */
 
 const logger = require('../utils/logger');
+const logModel = require('../models/log.model');
 
 let twilioClient = null;
 
@@ -112,9 +113,21 @@ function titleCase(str) {
 }
 
 async function enviarRecordatorioTurno(turno) {
-  const telefono = turno.paciente_telefono;
+  // 1. Verificar que el profesional tenga los recordatorios activos
+  if (turno.recordatorio_activo === false) {
+    logger.warn(`Recordatorio omitido (recordatorios desactivados por el profesional) para turno ${turno.id}`);
+    return null;
+  }
+
+  // 2. Verificar que el paciente tenga notificaciones habilitadas (más específico, tiene prioridad)
+  if (turno.paciente_notificaciones_activas === false) {
+    logger.warn(`Recordatorio omitido (notificaciones desactivadas para el paciente) para turno ${turno.id}`);
+    return null;
+  }
+
+  const telefono = turno.paciente_whatsapp;
   if (!telefono) {
-    logger.warn(`Recordatorio omitido (sin teléfono) para turno ${turno.id}`);
+    logger.warn(`Recordatorio omitido (sin número de WhatsApp) para turno ${turno.id}`);
     return null;
   }
 

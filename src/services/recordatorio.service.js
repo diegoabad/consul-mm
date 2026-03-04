@@ -11,6 +11,7 @@
 const turnoModel = require('../models/turno.model');
 const { enviarRecordatorioTurno } = require('./whatsapp.service');
 const logger = require('../utils/logger');
+const logModel = require('../models/log.model');
 
 const MAX_INTENTOS = 3;
 
@@ -57,6 +58,16 @@ async function procesarRecordatorios() {
       await turnoModel.marcarRecordatorioFallido(turno.id, errorMsg);
       if (intento >= MAX_INTENTOS) {
         logger.error(`[FALLO DEFINITIVO] Turno ${turno.id} alcanzó ${MAX_INTENTOS} intentos. Último error: ${errorMsg}`);
+        // Guardar en tabla logs para visibilidad en el panel
+        logModel.create({
+          origen: 'back',
+          accion: 'recordatorio_whatsapp_fallido',
+          ruta: '/cron/recordatorios',
+          metodo: 'CRON',
+          mensaje: `Recordatorio WhatsApp fallido definitivamente para turno ${turno.id} (${MAX_INTENTOS} intentos)`,
+          stack: errorMsg,
+          params: JSON.stringify({ turno_id: turno.id, paciente: `${turno.paciente_nombre} ${turno.paciente_apellido}`, intento }),
+        }).catch(() => {});
       } else {
         logger.warn(`[FALLO ${intento}/${MAX_INTENTOS}] Turno ${turno.id}: ${errorMsg}. Se reintentará.`);
       }

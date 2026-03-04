@@ -69,7 +69,7 @@ const turnoParamsSchema = Joi.object({
 const turnoQuerySchema = Joi.object({
   profesional_id: Joi.string().uuid().optional(),
   paciente_id: Joi.string().uuid().optional(),
-  estado: Joi.string().valid(...Object.values(ESTADOS_TURNO)).optional(),
+  estado: Joi.string().valid(...Object.values(ESTADOS_TURNO), 'activos').optional(),
   fecha_inicio: Joi.date().iso().optional(),
   fecha_fin: Joi.date().iso().optional(),
   page: Joi.number().integer().min(1).optional(),

@@ -129,9 +129,10 @@ function decryptDeterministic(value) {
 
 /** Campos sensibles de pacientes que se cifran en BD */
 const PACIENTE_ENCRYPT_FIELDS = [
-  'dni', 'nombre', 'apellido', 'fecha_nacimiento', 'telefono', 'email',
+  'dni', 'nombre', 'apellido', 'fecha_nacimiento', 'telefono', 'whatsapp', 'email',
   'direccion', 'obra_social', 'numero_afiliado', 'plan',
-  'contacto_emergencia_nombre', 'contacto_emergencia_telefono'
+  'contacto_emergencia_nombre', 'contacto_emergencia_telefono',
+  'contacto_emergencia_nombre_2', 'contacto_emergencia_telefono_2'
 ];
 
 function encryptPacienteRow(row) {
@@ -208,6 +209,7 @@ function decryptTurnoRow(row) {
   if (out.paciente_apellido != null) out.paciente_apellido = decrypt(out.paciente_apellido);
   if (out.paciente_dni != null) out.paciente_dni = decrypt(out.paciente_dni);
   if (out.paciente_telefono != null) out.paciente_telefono = decrypt(out.paciente_telefono);
+  if (out.paciente_whatsapp != null) out.paciente_whatsapp = decrypt(out.paciente_whatsapp);
   if (out.paciente_email != null) out.paciente_email = decrypt(out.paciente_email);
   return out;
 }

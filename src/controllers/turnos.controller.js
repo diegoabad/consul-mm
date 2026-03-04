@@ -317,14 +317,19 @@ const create = async (req, res, next) => {
           }
         });
     }
-    // Envío de WhatsApp de prueba: apenas se crea el turno se manda el recordatorio (SOLO PARA PRUEBAS)
+    // Envío de WhatsApp: apenas se crea el turno se manda el recordatorio
     if (process.env.WHATSAPP_RECORDATORIO_AL_CREAR === 'true') {
-      const turnoParaWsp = await turnoModel.findById(nuevoTurno.id);
-      if (turnoParaWsp) {
-        enviarRecordatorioTurno(turnoParaWsp)
-          .then(() => turnoModel.marcarRecordatorioEnviado(turnoParaWsp.id))
-          .catch((err) => logger.error('Error enviando WhatsApp al crear turno (prueba):', err.message));
-      }
+      // Usar findParaRecordatorioById para obtener datos completos del paciente
+      // (incluye notificaciones_activas para respetar la preferencia individual)
+      turnoModel.findParaRecordatorioById(nuevoTurno.id)
+        .then((turnoParaWsp) => {
+          if (!turnoParaWsp) return;
+          return enviarRecordatorioTurno(turnoParaWsp)
+            .then((resultado) => {
+              if (resultado) return turnoModel.marcarRecordatorioEnviado(turnoParaWsp.id);
+            });
+        })
+        .catch((err) => logger.error('Error enviando WhatsApp al crear turno:', err.message));
     }
 
     res.status(201).json(buildResponse(true, turnoCompleto, 'Turno creado exitosamente'));

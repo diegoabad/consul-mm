@@ -18,9 +18,10 @@ const findAll = async (filters = {}) => {
   try {
     let sql = `
       SELECT 
-        id, dni, nombre, apellido, fecha_nacimiento, telefono, email,
+        id, dni, nombre, apellido, fecha_nacimiento, telefono, whatsapp, email,
         direccion, obra_social, numero_afiliado, plan, contacto_emergencia_nombre,
-        contacto_emergencia_telefono, activo, fecha_creacion, fecha_actualizacion
+        contacto_emergencia_telefono, contacto_emergencia_nombre_2,
+        contacto_emergencia_telefono_2, notificaciones_activas, activo, fecha_creacion, fecha_actualizacion
       FROM pacientes
       WHERE 1=1
     `;
@@ -83,9 +84,10 @@ const findAllPaginated = async (filters = {}) => {
       }
       params.push(2000);
       const dataResult = await query(
-        `SELECT id, dni, nombre, apellido, fecha_nacimiento, telefono, email,
+        `SELECT id, dni, nombre, apellido, fecha_nacimiento, telefono, whatsapp, email,
           direccion, obra_social, numero_afiliado, plan, contacto_emergencia_nombre,
-          contacto_emergencia_telefono, activo, fecha_creacion, fecha_actualizacion
+          contacto_emergencia_telefono, contacto_emergencia_nombre_2,
+          contacto_emergencia_telefono_2, notificaciones_activas, activo, fecha_creacion, fecha_actualizacion
          FROM pacientes ${where}
          ORDER BY fecha_creacion DESC
          LIMIT $${paramIndex}`,
@@ -136,9 +138,10 @@ const findAllPaginated = async (filters = {}) => {
     const total = countResult.rows[0]?.total ?? 0;
     const dataParams = [...params, limitVal, offset];
     const dataSql = `
-      SELECT id, dni, nombre, apellido, fecha_nacimiento, telefono, email,
+      SELECT id, dni, nombre, apellido, fecha_nacimiento, telefono, whatsapp, email,
         direccion, obra_social, numero_afiliado, plan, contacto_emergencia_nombre,
-        contacto_emergencia_telefono, activo, fecha_creacion, fecha_actualizacion
+        contacto_emergencia_telefono, contacto_emergencia_nombre_2,
+        contacto_emergencia_telefono_2, notificaciones_activas, activo, fecha_creacion, fecha_actualizacion
       FROM pacientes ${where}
       ORDER BY fecha_creacion DESC
       LIMIT $${paramIndex++} OFFSET $${paramIndex}
@@ -160,9 +163,10 @@ const findById = async (id) => {
   try {
     const result = await query(
       `SELECT 
-        id, dni, nombre, apellido, fecha_nacimiento, telefono, email,
+        id, dni, nombre, apellido, fecha_nacimiento, telefono, whatsapp, email,
         direccion, obra_social, numero_afiliado, plan, contacto_emergencia_nombre,
-        contacto_emergencia_telefono, activo, fecha_creacion, fecha_actualizacion
+        contacto_emergencia_telefono, contacto_emergencia_nombre_2,
+        contacto_emergencia_telefono_2, notificaciones_activas, activo, fecha_creacion, fecha_actualizacion
       FROM pacientes
       WHERE id = $1`,
       [id]
@@ -184,9 +188,10 @@ const findByDni = async (dni) => {
   try {
     if (isEncryptionEnabled()) {
       const result = await query(
-        `SELECT id, dni, nombre, apellido, fecha_nacimiento, telefono, email,
+        `SELECT id, dni, nombre, apellido, fecha_nacimiento, telefono, whatsapp, email,
          direccion, obra_social, numero_afiliado, plan, contacto_emergencia_nombre,
-         contacto_emergencia_telefono, activo, fecha_creacion, fecha_actualizacion
+         contacto_emergencia_telefono, contacto_emergencia_nombre_2,
+        contacto_emergencia_telefono_2, notificaciones_activas, activo, fecha_creacion, fecha_actualizacion
          FROM pacientes LIMIT 5000`
       );
       const term = String(dni || '').trim();
@@ -198,9 +203,10 @@ const findByDni = async (dni) => {
     }
     const result = await query(
       `SELECT 
-        id, dni, nombre, apellido, fecha_nacimiento, telefono, email,
+        id, dni, nombre, apellido, fecha_nacimiento, telefono, whatsapp, email,
         direccion, obra_social, numero_afiliado, plan, contacto_emergencia_nombre,
-        contacto_emergencia_telefono, activo, fecha_creacion, fecha_actualizacion
+        contacto_emergencia_telefono, contacto_emergencia_nombre_2,
+        contacto_emergencia_telefono_2, notificaciones_activas, activo, fecha_creacion, fecha_actualizacion
       FROM pacientes
       WHERE dni = $1`,
       [dni]
@@ -224,9 +230,10 @@ const search = async (searchTerm) => {
 
     if (isEncryptionEnabled()) {
       const result = await query(
-        `SELECT id, dni, nombre, apellido, fecha_nacimiento, telefono, email,
+        `         SELECT id, dni, nombre, apellido, fecha_nacimiento, telefono, whatsapp, email,
          direccion, obra_social, numero_afiliado, plan, contacto_emergencia_nombre,
-         contacto_emergencia_telefono, activo, fecha_creacion, fecha_actualizacion
+         contacto_emergencia_telefono, contacto_emergencia_nombre_2,
+        contacto_emergencia_telefono_2, notificaciones_activas, activo, fecha_creacion, fecha_actualizacion
          FROM pacientes ORDER BY fecha_creacion DESC LIMIT 2000`
       );
       const decrypted = decryptPacienteRows(result.rows);
@@ -242,9 +249,10 @@ const search = async (searchTerm) => {
     const sqlTerm = `%${term}%`;
     const result = await query(
       `SELECT 
-        id, dni, nombre, apellido, fecha_nacimiento, telefono, email,
+        id, dni, nombre, apellido, fecha_nacimiento, telefono, whatsapp, email,
         direccion, obra_social, numero_afiliado, plan, contacto_emergencia_nombre,
-        contacto_emergencia_telefono, activo, fecha_creacion, fecha_actualizacion
+        contacto_emergencia_telefono, contacto_emergencia_nombre_2,
+        contacto_emergencia_telefono_2, notificaciones_activas, activo, fecha_creacion, fecha_actualizacion
       FROM pacientes
       WHERE 
         nombre ILIKE $1 OR 
@@ -274,6 +282,7 @@ const create = async (pacienteData) => {
       apellido: pacienteData.apellido,
       fecha_nacimiento: pacienteData.fecha_nacimiento ?? null,
       telefono: pacienteData.telefono ?? null,
+      whatsapp: pacienteData.whatsapp ?? null,
       email: pacienteData.email ?? null,
       direccion: pacienteData.direccion ?? null,
       obra_social: pacienteData.obra_social ?? null,
@@ -281,23 +290,30 @@ const create = async (pacienteData) => {
       plan: pacienteData.plan ?? null,
       contacto_emergencia_nombre: pacienteData.contacto_emergencia_nombre ?? null,
       contacto_emergencia_telefono: pacienteData.contacto_emergencia_telefono ?? null,
-      activo: pacienteData.activo !== false
+      contacto_emergencia_nombre_2: pacienteData.contacto_emergencia_nombre_2 ?? null,
+      contacto_emergencia_telefono_2: pacienteData.contacto_emergencia_telefono_2 ?? null,
+      activo: pacienteData.activo !== false,
+      notificaciones_activas: pacienteData.notificaciones_activas !== false
     };
     const enc = encryptPacienteRow(raw);
     const result = await query(
       `INSERT INTO pacientes (
-        dni, nombre, apellido, fecha_nacimiento, telefono, email,
+        dni, nombre, apellido, fecha_nacimiento, telefono, whatsapp, email,
         direccion, obra_social, numero_afiliado, plan, contacto_emergencia_nombre,
-        contacto_emergencia_telefono, activo
+        contacto_emergencia_telefono, contacto_emergencia_nombre_2,
+        contacto_emergencia_telefono_2, notificaciones_activas, activo
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-      RETURNING id, dni, nombre, apellido, fecha_nacimiento, telefono, email,
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+      RETURNING id, dni, nombre, apellido, fecha_nacimiento, telefono, whatsapp, email,
                 direccion, obra_social, numero_afiliado, plan, contacto_emergencia_nombre,
-                contacto_emergencia_telefono, activo, fecha_creacion, fecha_actualizacion`,
+                contacto_emergencia_telefono, contacto_emergencia_nombre_2,
+                contacto_emergencia_telefono_2, notificaciones_activas, activo, fecha_creacion, fecha_actualizacion`,
       [
         enc.dni, enc.nombre, enc.apellido, enc.fecha_nacimiento, enc.telefono,
-        enc.email, enc.direccion, enc.obra_social, enc.numero_afiliado, enc.plan,
-        enc.contacto_emergencia_nombre, enc.contacto_emergencia_telefono, enc.activo
+        enc.whatsapp, enc.email, enc.direccion, enc.obra_social, enc.numero_afiliado, enc.plan,
+        enc.contacto_emergencia_nombre, enc.contacto_emergencia_telefono,
+        enc.contacto_emergencia_nombre_2, enc.contacto_emergencia_telefono_2,
+        enc.notificaciones_activas, enc.activo
       ]
     );
     return decryptPacienteRow(result.rows[0]);
@@ -316,9 +332,10 @@ const create = async (pacienteData) => {
 const update = async (id, pacienteData) => {
   try {
     const allowedFields = [
-      'dni', 'nombre', 'apellido', 'fecha_nacimiento', 'telefono', 'email',
+      'dni', 'nombre', 'apellido', 'fecha_nacimiento', 'telefono', 'whatsapp', 'email',
       'direccion', 'obra_social', 'numero_afiliado', 'plan', 'contacto_emergencia_nombre',
-      'contacto_emergencia_telefono', 'activo'
+      'contacto_emergencia_telefono', 'contacto_emergencia_nombre_2',
+      'contacto_emergencia_telefono_2', 'notificaciones_activas', 'activo'
     ];
     const raw = {};
     for (const field of allowedFields) {
@@ -341,9 +358,10 @@ const update = async (id, pacienteData) => {
       UPDATE pacientes 
       SET ${updates.join(', ')} 
       WHERE id = $${paramIndex}
-      RETURNING id, dni, nombre, apellido, fecha_nacimiento, telefono, email,
+      RETURNING id, dni, nombre, apellido, fecha_nacimiento, telefono, whatsapp, email,
                 direccion, obra_social, numero_afiliado, plan, contacto_emergencia_nombre,
-                contacto_emergencia_telefono, activo, fecha_creacion, fecha_actualizacion
+                contacto_emergencia_telefono, contacto_emergencia_nombre_2,
+        contacto_emergencia_telefono_2, notificaciones_activas, activo, fecha_creacion, fecha_actualizacion
     `;
     const result = await query(sql, params);
     return result.rows[0] ? decryptPacienteRow(result.rows[0]) : null;
@@ -384,7 +402,8 @@ const activate = async (id) => {
        WHERE id = $1
        RETURNING id, dni, nombre, apellido, fecha_nacimiento, telefono, email,
                  direccion, obra_social, numero_afiliado, plan, contacto_emergencia_nombre,
-                 contacto_emergencia_telefono, activo, fecha_creacion, fecha_actualizacion`,
+                 contacto_emergencia_telefono, contacto_emergencia_nombre_2,
+        contacto_emergencia_telefono_2, notificaciones_activas, activo, fecha_creacion, fecha_actualizacion`,
       [id]
     );
     return result.rows[0] ? decryptPacienteRow(result.rows[0]) : null;
@@ -407,7 +426,8 @@ const deactivate = async (id) => {
        WHERE id = $1
        RETURNING id, dni, nombre, apellido, fecha_nacimiento, telefono, email,
                  direccion, obra_social, numero_afiliado, plan, contacto_emergencia_nombre,
-                 contacto_emergencia_telefono, activo, fecha_creacion, fecha_actualizacion`,
+                 contacto_emergencia_telefono, contacto_emergencia_nombre_2,
+        contacto_emergencia_telefono_2, notificaciones_activas, activo, fecha_creacion, fecha_actualizacion`,
       [id]
     );
     return result.rows[0] ? decryptPacienteRow(result.rows[0]) : null;

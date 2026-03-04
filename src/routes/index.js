@@ -29,6 +29,8 @@ const especialidadesRoutes = require('./especialidades.routes');
 const obrasSocialesRoutes = require('./obras-sociales.routes');
 const logsRoutes = require('./logs.routes');
 const whatsappRoutes = require('./whatsapp.routes');
+const dashboardRoutes = require('./dashboard.routes');
+const recordatoriosRoutes = require('./recordatorios.routes');
 
 // Health check (incluye estado de migraciones: si hay pendientes, se aplican al arrancar el servidor)
 router.get('/health', async (req, res) => {
@@ -67,6 +69,8 @@ router.use('/especialidades', especialidadesRoutes);
 router.use('/obras-sociales', obrasSocialesRoutes);
 router.use('/logs', logsRoutes);
 router.use('/webhooks/whatsapp', whatsappRoutes);
+router.use('/dashboard', dashboardRoutes);
+router.use('/recordatorios', recordatoriosRoutes);
 
 // Rutas públicas de confirmación/cancelación de turno por URL
 // GET /api/webhooks/turno/:id/confirmar  y  /cancelar

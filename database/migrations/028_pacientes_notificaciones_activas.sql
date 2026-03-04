@@ -1,0 +1,1 @@
+ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS notificaciones_activas BOOLEAN NOT NULL DEFAULT true;

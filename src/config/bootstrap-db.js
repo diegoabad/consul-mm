@@ -43,6 +43,10 @@ const MIGRATIONS_ORDER = [
   '023_profesionales_recordatorio_config.sql',
   '024_turnos_recordatorio_enviado.sql',
   '025_turnos_recordatorio_reintentos.sql',
+  '026_pacientes_whatsapp.sql',
+  '027_pacientes_contacto_emergencia_2.sql',
+  '028_pacientes_notificaciones_activas.sql',
+  '029_turnos_soft_delete.sql',
 ];
 
 const SALT_ROUNDS = 10;

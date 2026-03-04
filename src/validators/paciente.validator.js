@@ -44,8 +44,12 @@ const createPacienteSchema = Joi.object({
   obra_social: Joi.string().max(100).optional().allow(null, ''),
   numero_afiliado: Joi.string().max(50).optional().allow(null, ''),
   plan: Joi.string().max(100).optional().allow(null, ''),
+  whatsapp: Joi.string().max(20).optional().allow(null, ''),
   contacto_emergencia_nombre: Joi.string().max(100).optional().allow(null, ''),
   contacto_emergencia_telefono: validatePhone().optional().allow(null, ''),
+  contacto_emergencia_nombre_2: Joi.string().max(100).optional().allow(null, ''),
+  contacto_emergencia_telefono_2: validatePhone().optional().allow(null, ''),
+  notificaciones_activas: Joi.boolean().optional(),
   activo: Joi.boolean().default(true)
 });
 
@@ -60,8 +64,12 @@ const updatePacienteSchema = Joi.object({
   obra_social: Joi.string().max(100).optional().allow(null, ''),
   numero_afiliado: Joi.string().max(50).optional().allow(null, ''),
   plan: Joi.string().max(100).optional().allow(null, ''),
+  whatsapp: Joi.string().max(20).optional().allow(null, ''),
   contacto_emergencia_nombre: Joi.string().max(100).optional().allow(null, ''),
   contacto_emergencia_telefono: validatePhone().optional().allow(null, ''),
+  contacto_emergencia_nombre_2: Joi.string().max(100).optional().allow(null, ''),
+  contacto_emergencia_telefono_2: validatePhone().optional().allow(null, ''),
+  notificaciones_activas: Joi.boolean().optional(),
   activo: Joi.boolean().optional()
 });
 
