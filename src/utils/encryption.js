@@ -127,8 +127,16 @@ function decryptDeterministic(value) {
   }
 }
 
-/** Campos sensibles de pacientes que se cifran en BD */
+/** Campos sensibles de pacientes que se cifran en BD (dni, nombre, apellido NO se cifran para búsqueda rápida) */
 const PACIENTE_ENCRYPT_FIELDS = [
+  'fecha_nacimiento', 'telefono', 'whatsapp', 'email',
+  'direccion', 'obra_social', 'numero_afiliado', 'plan',
+  'contacto_emergencia_nombre', 'contacto_emergencia_telefono',
+  'contacto_emergencia_nombre_2', 'contacto_emergencia_telefono_2'
+];
+
+/** Campos a descifrar al leer (incluye dni, nombre, apellido por compatibilidad con datos legacy cifrados) */
+const PACIENTE_DECRYPT_FIELDS = [
   'dni', 'nombre', 'apellido', 'fecha_nacimiento', 'telefono', 'whatsapp', 'email',
   'direccion', 'obra_social', 'numero_afiliado', 'plan',
   'contacto_emergencia_nombre', 'contacto_emergencia_telefono',
@@ -149,7 +157,7 @@ function encryptPacienteRow(row) {
 function decryptPacienteRow(row) {
   if (!row) return row;
   const out = { ...row };
-  for (const field of PACIENTE_ENCRYPT_FIELDS) {
+  for (const field of PACIENTE_DECRYPT_FIELDS) {
     if (out[field] !== undefined && out[field] !== null) {
       out[field] = decrypt(out[field]);
     }
@@ -264,6 +272,7 @@ module.exports = {
   ENCRYPTION_PREFIX,
   ENCRYPTION_DETERMINISTIC_PREFIX,
   PACIENTE_ENCRYPT_FIELDS,
+  PACIENTE_DECRYPT_FIELDS,
   encryptPacienteRow,
   decryptPacienteRow,
   decryptPacienteRows,

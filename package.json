@@ -14,7 +14,9 @@
     "test:migrations": "node scripts/test-migrations.js",
     "test-connection": "node scripts/test-connection.js",
     "setup-users": "node test/crear-usuarios-prueba.js",
-    "migrate-encrypt": "node scripts/migrate-encrypt-existing-data.js"
+    "migrate-encrypt": "node scripts/migrate-encrypt-existing-data.js",
+    "decrypt-migrate-pacientes": "node scripts/decrypt-migrate-pacientes.js",
+    "backup-db": "node scripts/backup-db.js"
   },
   "keywords": [
     "consultorio",

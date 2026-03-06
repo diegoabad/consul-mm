@@ -7,7 +7,7 @@
 
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
-const { encryptPacienteRow, decryptPacienteRow, decryptPacienteRows, isEncryptionEnabled } = require('../utils/encryption');
+const { encryptPacienteRow, decryptPacienteRow, decryptPacienteRows } = require('../utils/encryption');
 
 /**
  * Buscar todos los pacientes con filtros opcionales
@@ -64,50 +64,6 @@ const findAllPaginated = async (filters = {}) => {
     const limitVal = Math.min(100, Math.max(1, limit));
     const offset = (Math.max(1, page) - 1) * limitVal;
     const hasQ = filters.q && String(filters.q).trim();
-    const useEncryptedSearch = isEncryptionEnabled() && hasQ;
-
-    if (useEncryptedSearch) {
-      let where = ' WHERE 1=1';
-      const params = [];
-      let paramIndex = 1;
-      if (filters.activo !== undefined) {
-        where += ` AND activo = $${paramIndex++}`;
-        params.push(filters.activo);
-      }
-      if (filters.obra_social) {
-        where += ` AND obra_social ILIKE $${paramIndex++}`;
-        params.push(`%${filters.obra_social}%`);
-      }
-      if (filters.ids && Array.isArray(filters.ids) && filters.ids.length > 0) {
-        where += ` AND id = ANY($${paramIndex++})`;
-        params.push(filters.ids);
-      }
-      params.push(2000);
-      const dataResult = await query(
-        `SELECT id, dni, nombre, apellido, fecha_nacimiento, telefono, whatsapp, email,
-          direccion, obra_social, numero_afiliado, plan, contacto_emergencia_nombre,
-          contacto_emergencia_telefono, contacto_emergencia_nombre_2,
-          contacto_emergencia_telefono_2, notificaciones_activas, activo, fecha_creacion, fecha_actualizacion
-         FROM pacientes ${where}
-         ORDER BY fecha_creacion DESC
-         LIMIT $${paramIndex}`,
-        params
-      );
-      const decrypted = decryptPacienteRows(dataResult.rows);
-      const term = String(filters.q).trim().toLowerCase();
-      const obraMatch = filters.obra_social ? String(filters.obra_social).trim().toLowerCase() : null;
-      const filtered = decrypted.filter((p) => {
-        const matchQ = (p.nombre || '').toLowerCase().includes(term) ||
-          (p.apellido || '').toLowerCase().includes(term) ||
-          (p.dni || '').toLowerCase().includes(term) ||
-          (p.email || '').toLowerCase().includes(term);
-        const matchObra = !obraMatch || (p.obra_social || '').toLowerCase().includes(obraMatch);
-        return matchQ && matchObra;
-      });
-      const total = filtered.length;
-      const rows = filtered.slice(offset, offset + limitVal);
-      return { rows, total };
-    }
 
     let where = ' WHERE 1=1';
     const params = [];
@@ -126,7 +82,7 @@ const findAllPaginated = async (filters = {}) => {
     }
     if (hasQ) {
       const term = `%${String(filters.q).trim()}%`;
-      where += ` AND (nombre ILIKE $${paramIndex} OR apellido ILIKE $${paramIndex} OR dni ILIKE $${paramIndex} OR email ILIKE $${paramIndex})`;
+      where += ` AND (nombre ILIKE $${paramIndex} OR apellido ILIKE $${paramIndex} OR dni ILIKE $${paramIndex})`;
       params.push(term);
       paramIndex += 1;
     }
@@ -186,32 +142,20 @@ const findById = async (id) => {
  */
 const findByDni = async (dni) => {
   try {
-    if (isEncryptionEnabled()) {
-      const result = await query(
-        `SELECT id, dni, nombre, apellido, fecha_nacimiento, telefono, whatsapp, email,
-         direccion, obra_social, numero_afiliado, plan, contacto_emergencia_nombre,
-         contacto_emergencia_telefono, contacto_emergencia_nombre_2,
-        contacto_emergencia_telefono_2, notificaciones_activas, activo, fecha_creacion, fecha_actualizacion
-         FROM pacientes LIMIT 5000`
-      );
-      const term = String(dni || '').trim();
-      for (const row of result.rows) {
-        const dec = decryptPacienteRow(row);
-        if (dec.dni === term) return dec;
-      }
-      return null;
-    }
+    const term = String(dni || '').trim().replace(/\D/g, '');
+    if (!term) return null;
     const result = await query(
-      `SELECT 
-        id, dni, nombre, apellido, fecha_nacimiento, telefono, whatsapp, email,
-        direccion, obra_social, numero_afiliado, plan, contacto_emergencia_nombre,
-        contacto_emergencia_telefono, contacto_emergencia_nombre_2,
-        contacto_emergencia_telefono_2, notificaciones_activas, activo, fecha_creacion, fecha_actualizacion
-      FROM pacientes
-      WHERE dni = $1`,
-      [dni]
+      `SELECT id, dni, nombre, apellido, fecha_nacimiento, telefono, whatsapp, email,
+       direccion, obra_social, numero_afiliado, plan, contacto_emergencia_nombre,
+       contacto_emergencia_telefono, contacto_emergencia_nombre_2,
+       contacto_emergencia_telefono_2, notificaciones_activas, activo, fecha_creacion, fecha_actualizacion
+       FROM pacientes
+       WHERE REGEXP_REPLACE(COALESCE(dni,''), '[^0-9]', '', 'g') = $1 OR dni = $2
+       LIMIT 1`,
+      [term, dni]
     );
-    return result.rows[0] || null;
+    const row = result.rows[0];
+    return row ? decryptPacienteRow(row) : null;
   } catch (error) {
     logger.error('Error en findByDni paciente:', error);
     throw error;
@@ -227,42 +171,19 @@ const search = async (searchTerm) => {
   try {
     const term = String(searchTerm || '').trim().toLowerCase();
     if (!term) return [];
-
-    if (isEncryptionEnabled()) {
-      const result = await query(
-        `         SELECT id, dni, nombre, apellido, fecha_nacimiento, telefono, whatsapp, email,
-         direccion, obra_social, numero_afiliado, plan, contacto_emergencia_nombre,
-         contacto_emergencia_telefono, contacto_emergencia_nombre_2,
-        contacto_emergencia_telefono_2, notificaciones_activas, activo, fecha_creacion, fecha_actualizacion
-         FROM pacientes ORDER BY fecha_creacion DESC LIMIT 2000`
-      );
-      const decrypted = decryptPacienteRows(result.rows);
-      const filtered = decrypted.filter((p) => {
-        const n = (p.nombre || '').toLowerCase();
-        const a = (p.apellido || '').toLowerCase();
-        const d = (p.dni || '').toLowerCase();
-        return n.includes(term) || a.includes(term) || d.includes(term);
-      });
-      return filtered.slice(0, 50);
-    }
-
     const sqlTerm = `%${term}%`;
     const result = await query(
-      `SELECT 
-        id, dni, nombre, apellido, fecha_nacimiento, telefono, whatsapp, email,
-        direccion, obra_social, numero_afiliado, plan, contacto_emergencia_nombre,
-        contacto_emergencia_telefono, contacto_emergencia_nombre_2,
-        contacto_emergencia_telefono_2, notificaciones_activas, activo, fecha_creacion, fecha_actualizacion
-      FROM pacientes
-      WHERE 
-        nombre ILIKE $1 OR 
-        apellido ILIKE $1 OR 
-        dni ILIKE $1
-      ORDER BY nombre, apellido
-      LIMIT 50`,
+      `SELECT id, dni, nombre, apellido, fecha_nacimiento, telefono, whatsapp, email,
+       direccion, obra_social, numero_afiliado, plan, contacto_emergencia_nombre,
+       contacto_emergencia_telefono, contacto_emergencia_nombre_2,
+       contacto_emergencia_telefono_2, notificaciones_activas, activo, fecha_creacion, fecha_actualizacion
+       FROM pacientes
+       WHERE nombre ILIKE $1 OR apellido ILIKE $1 OR dni ILIKE $1
+       ORDER BY nombre, apellido
+       LIMIT 50`,
       [sqlTerm]
     );
-    return result.rows;
+    return decryptPacienteRows(result.rows);
   } catch (error) {
     logger.error('Error en search pacientes:', error);
     throw error;

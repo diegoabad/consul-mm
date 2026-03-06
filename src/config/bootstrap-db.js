@@ -50,6 +50,7 @@ const MIGRATIONS_ORDER = [
   '030_foro_profesional.sql',
   '031_foro_post_parent_id.sql',
   '032_foro_post_indexes.sql',
+  '035_drop_pacientes_search_columns.sql',
 ];
 
 const SALT_ROUNDS = 10;
