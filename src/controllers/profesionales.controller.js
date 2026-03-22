@@ -52,7 +52,7 @@ const getAll = async (req, res, next) => {
       return res.json(buildResponse(true, list, 'Profesional obtenido exitosamente'));
     }
 
-    const { activo, bloqueado, especialidad, estado_pago, page, limit, id, tipo_periodo_pago } = req.query;
+    const { activo, bloqueado, especialidad, estado_pago, page, limit, id, tipo_periodo_pago, q } = req.query;
     const hasPagination = page !== undefined || limit !== undefined;
 
     if (hasPagination) {
@@ -66,6 +66,7 @@ const getAll = async (req, res, next) => {
       if (estado_pago) filters.estado_pago = estado_pago;
       if (id) filters.id = id;
       if (tipo_periodo_pago) filters.tipo_periodo_pago = tipo_periodo_pago;
+      if (q && String(q).trim()) filters.q = String(q).trim();
 
       const { rows, total } = await profesionalModel.findAllPaginated(filters);
       const totalPages = Math.ceil(total / filters.limit) || 0;

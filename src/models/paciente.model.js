@@ -55,7 +55,7 @@ const findAll = async (filters = {}) => {
 
 /**
  * Listar pacientes con paginación y filtros (búsqueda, activo, obra_social)
- * @param {Object} filters - { q, activo, obra_social, ids, page, limit }
+ * @param {Object} filters - { q, activo, obra_social, ids, profesionalId, page, limit }
  * @returns {Promise<{ rows: Array, total: number }>}
  */
 const findAllPaginated = async (filters = {}) => {
@@ -76,7 +76,10 @@ const findAllPaginated = async (filters = {}) => {
       where += ` AND obra_social ILIKE $${paramIndex++}`;
       params.push(`%${filters.obra_social}%`);
     }
-    if (filters.ids && Array.isArray(filters.ids) && filters.ids.length > 0) {
+    if (filters.profesionalId) {
+      where += ` AND EXISTS (SELECT 1 FROM paciente_profesional pp WHERE pp.paciente_id = pacientes.id AND pp.profesional_id = $${paramIndex++})`;
+      params.push(filters.profesionalId);
+    } else if (filters.ids && Array.isArray(filters.ids) && filters.ids.length > 0) {
       where += ` AND id = ANY($${paramIndex++})`;
       params.push(filters.ids);
     }

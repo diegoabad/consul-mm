@@ -47,6 +47,11 @@ function formatFechaPDF(val) {
 function formatFechaCorta(val) {
   if (!val) return '-';
   try {
+    const s = String(val).trim();
+    const ymd = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+    if (ymd) {
+      return `${ymd[3]}/${ymd[2]}/${ymd[1]}`;
+    }
     const d = typeof val === 'string' ? new Date(val) : val;
     if (isNaN(d.getTime())) return '-';
     const pad = (n) => String(n).padStart(2, '0');

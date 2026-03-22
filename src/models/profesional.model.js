@@ -62,7 +62,7 @@ const findAll = async (filters = {}) => {
 
 /**
  * Listar profesionales con paginación y filtros (para Contratos y otros listados)
- * @param {Object} filters - { page, limit, activo, bloqueado, especialidad, estado_pago, id (profesional_id), tipo_periodo_pago }
+ * @param {Object} filters - { page, limit, activo, bloqueado, especialidad, estado_pago, id (profesional_id), tipo_periodo_pago, q }
  * @returns {Promise<{ rows: Array, total: number }>}
  */
 const findAllPaginated = async (filters = {}) => {
@@ -98,6 +98,12 @@ const findAllPaginated = async (filters = {}) => {
     if (filters.tipo_periodo_pago) {
       where += ` AND COALESCE(p.tipo_periodo_pago, 'mensual') = $${paramIndex++}`;
       params.push(filters.tipo_periodo_pago);
+    }
+    if (filters.q && String(filters.q).trim()) {
+      const term = `%${String(filters.q).trim()}%`;
+      where += ` AND (u.nombre ILIKE $${paramIndex} OR u.apellido ILIKE $${paramIndex} OR u.email ILIKE $${paramIndex} OR COALESCE(p.matricula, '') ILIKE $${paramIndex} OR COALESCE(p.especialidad, '') ILIKE $${paramIndex})`;
+      params.push(term);
+      paramIndex += 1;
     }
 
     const fromClause = ` FROM profesionales p INNER JOIN usuarios u ON p.usuario_id = u.id ${where}`;

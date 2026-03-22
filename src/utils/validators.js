@@ -47,6 +47,43 @@ const validateDate = () => {
 };
 
 /**
+ * Fecha de nacimiento solo como texto YYYY-MM-DD.
+ * No usar Joi.date(): en Node convierte a Date (UTC) y al cifrar con String(date)
+ * o al leer en PDF con new Date() se desplaza un día en zonas como America/Argentina/Buenos_Aires.
+ */
+const validatePacienteFechaNacimiento = () => {
+  return Joi.string()
+    .allow(null, '')
+    .custom((value, helpers) => {
+      if (value === null || value === undefined || value === '') return value;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        return helpers.error('string.pattern.base');
+      }
+      const [ys, ms, ds] = value.split('-');
+      const y = parseInt(ys, 10);
+      const m = parseInt(ms, 10);
+      const d = parseInt(ds, 10);
+      const cal = new Date(y, m - 1, d);
+      if (cal.getFullYear() !== y || cal.getMonth() !== m - 1 || cal.getDate() !== d) {
+        return helpers.error('date.invalid');
+      }
+      const now = new Date();
+      const todayY = now.getFullYear();
+      const todayM = now.getMonth() + 1;
+      const todayD = now.getDate();
+      if (y > todayY || (y === todayY && m > todayM) || (y === todayY && m === todayM && d > todayD)) {
+        return helpers.error('date.max');
+      }
+      return value;
+    })
+    .messages({
+      'string.pattern.base': 'La fecha debe tener formato YYYY-MM-DD',
+      'date.invalid': 'La fecha no es válida',
+      'date.max': 'La fecha no puede ser futura'
+    });
+};
+
+/**
  * Validador de email
  */
 const validateEmail = () => {
@@ -72,6 +109,7 @@ module.exports = {
   validateDNI,
   validatePhone,
   validateDate,
+  validatePacienteFechaNacimiento,
   validateEmail,
   validatePassword
 };

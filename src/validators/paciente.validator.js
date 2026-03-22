@@ -6,7 +6,7 @@
  */
 
 const Joi = require('joi');
-const { validateDNI, validatePhone, validateEmail, validateDate } = require('../utils/validators');
+const { validateDNI, validatePhone, validateEmail, validatePacienteFechaNacimiento } = require('../utils/validators');
 
 const createPacienteSchema = Joi.object({
   dni: validateDNI().required().label('DNI')
@@ -32,7 +32,7 @@ const createPacienteSchema = Joi.object({
       'string.empty': 'El apellido no puede estar vacío',
       'string.base': 'El apellido debe ser un texto'
     }),
-  fecha_nacimiento: validateDate().optional().allow(null),
+  fecha_nacimiento: validatePacienteFechaNacimiento().optional().allow(null),
   telefono: validatePhone().required().label('Teléfono')
     .messages({
       'any.required': 'El teléfono es requerido',
@@ -57,7 +57,7 @@ const updatePacienteSchema = Joi.object({
   dni: validateDNI().optional(),
   nombre: Joi.string().min(2).max(100).optional(),
   apellido: Joi.string().min(2).max(100).optional(),
-  fecha_nacimiento: validateDate().optional().allow(null),
+  fecha_nacimiento: validatePacienteFechaNacimiento().optional().allow(null),
   telefono: validatePhone().optional().allow(null, ''),
   email: validateEmail().optional().allow(null, ''),
   direccion: Joi.string().max(500).optional().allow(null, ''),

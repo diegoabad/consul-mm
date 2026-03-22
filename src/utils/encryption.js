@@ -127,6 +127,26 @@ function decryptDeterministic(value) {
   }
 }
 
+/** Normaliza fecha de nacimiento antes de cifrar (evita guardar Date#toString() local incorrecto). */
+function normalizeFechaNacimientoForStorage(value) {
+  if (value === undefined || value === null || value === '') return value;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+  const s = String(value).trim();
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : s;
+}
+
+/** Tras descifrar: dejar solo YYYY-MM-DD si venía ISO completo. */
+function normalizeFechaNacimientoAfterDecrypt(value) {
+  if (value === undefined || value === null || value === '') return value;
+  const s = String(value).trim();
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})(?:[T\s]|$)/);
+  if (m) return m[1];
+  return s;
+}
+
 /** Campos sensibles de pacientes que se cifran en BD (dni, nombre, apellido NO se cifran para búsqueda rápida) */
 const PACIENTE_ENCRYPT_FIELDS = [
   'fecha_nacimiento', 'telefono', 'whatsapp', 'email',
@@ -147,9 +167,19 @@ function encryptPacienteRow(row) {
   if (!row) return row;
   const out = { ...row };
   for (const field of PACIENTE_ENCRYPT_FIELDS) {
-    if (out[field] !== undefined && out[field] !== null) {
-      out[field] = encrypt(out[field]);
+    if (!Object.prototype.hasOwnProperty.call(out, field)) continue;
+    const val = out[field];
+    if (val === null || val === '') {
+      out[field] = null;
+      continue;
     }
+    let v = val;
+    if (field === 'fecha_nacimiento') v = normalizeFechaNacimientoForStorage(v);
+    if (v === null || v === '') {
+      out[field] = null;
+      continue;
+    }
+    out[field] = encrypt(v);
   }
   return out;
 }
@@ -159,7 +189,9 @@ function decryptPacienteRow(row) {
   const out = { ...row };
   for (const field of PACIENTE_DECRYPT_FIELDS) {
     if (out[field] !== undefined && out[field] !== null) {
-      out[field] = decrypt(out[field]);
+      let val = decrypt(out[field]);
+      if (field === 'fecha_nacimiento') val = normalizeFechaNacimientoAfterDecrypt(val);
+      out[field] = val;
     }
   }
   return out;

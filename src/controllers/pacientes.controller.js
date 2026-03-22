@@ -32,11 +32,7 @@ const getAll = async (req, res, next) => {
       if (!profesional) {
         return res.json(buildResponse(true, { data: [], total: 0, page: 1, limit: filters.limit, totalPages: 0 }, 'Pacientes obtenidos exitosamente'));
       }
-      const pacienteIds = await pacienteProfesionalModel.getPacienteIdsByProfesional(profesional.id);
-      if (pacienteIds.length === 0) {
-        return res.json(buildResponse(true, { data: [], total: 0, page: 1, limit: filters.limit, totalPages: 0 }, 'Pacientes obtenidos exitosamente'));
-      }
-      filters.ids = pacienteIds;
+      filters.profesionalId = profesional.id;
     }
 
     const { rows, total } = await pacienteModel.findAllPaginated(filters);
@@ -213,6 +209,7 @@ const create = async (req, res, next) => {
       apellido,
       fecha_nacimiento,
       telefono,
+      whatsapp,
       email,
       direccion,
       obra_social,
@@ -220,6 +217,9 @@ const create = async (req, res, next) => {
       plan,
       contacto_emergencia_nombre,
       contacto_emergencia_telefono,
+      contacto_emergencia_nombre_2,
+      contacto_emergencia_telefono_2,
+      notificaciones_activas,
       activo
     } = req.body;
     
@@ -229,12 +229,15 @@ const create = async (req, res, next) => {
       return res.status(409).json(buildResponse(false, null, 'El DNI ya está registrado'));
     }
     
+    const whatsappTrim = whatsapp != null && String(whatsapp).trim() ? String(whatsapp).trim() : null;
+
     const nuevoPaciente = await pacienteModel.create({
       dni,
       nombre: normalizeToLowerCase(nombre) ?? nombre,
       apellido: normalizeToLowerCase(apellido) ?? apellido,
       fecha_nacimiento: fecha_nacimiento || null,
       telefono: telefono || null,
+      whatsapp: whatsappTrim,
       email: email || null,
       direccion: direccion ? normalizeToLowerCase(direccion) : null,
       obra_social: obra_social ? normalizeToLowerCase(obra_social) : null,
@@ -242,6 +245,9 @@ const create = async (req, res, next) => {
       plan: plan && String(plan).trim() ? String(plan).trim() : null,
       contacto_emergencia_nombre: contacto_emergencia_nombre ? normalizeToLowerCase(contacto_emergencia_nombre) : null,
       contacto_emergencia_telefono: contacto_emergencia_telefono || null,
+      contacto_emergencia_nombre_2: contacto_emergencia_nombre_2 ? normalizeToLowerCase(contacto_emergencia_nombre_2) : null,
+      contacto_emergencia_telefono_2: contacto_emergencia_telefono_2 || null,
+      notificaciones_activas,
       activo: activo !== undefined ? activo : true
     });
     
