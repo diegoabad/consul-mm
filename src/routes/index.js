@@ -85,11 +85,13 @@ router.use('/dashboard', dashboardRoutes);
 router.use('/recordatorios', recordatoriosRoutes);
 router.use('/foro', foroRoutes);
 
-// Rutas públicas de confirmación/cancelación de turno por URL
-// GET /api/webhooks/turno/:id/confirmar  y  /cancelar
-const { confirmarPorUrl, cancelarPorUrl } = require('../controllers/whatsapp.controller');
+// Rutas públicas de confirmación/cancelación de turno
+// GET /api/webhooks/turno/:id/confirmar|cancelar — enlace CTA en plantilla
+// POST /api/webhooks/twilio — Twilio (ButtonPayload turno_confirmar:<uuid> / turno_cancelar:<uuid>)
+const { confirmarPorUrl, cancelarPorUrl, twilioWebhook } = require('../controllers/whatsapp.controller');
 router.get('/webhooks/turno/:id/confirmar', confirmarPorUrl);
 router.get('/webhooks/turno/:id/cancelar', cancelarPorUrl);
+router.post('/webhooks/twilio', twilioWebhook);
 
 // ─── Endpoint de prueba (solo admin/dev) ───────────────────────────────────────
 // POST /api/test/recordatorios/disparar  → corre el job de recordatorios ahora

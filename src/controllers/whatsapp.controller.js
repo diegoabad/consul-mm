@@ -7,6 +7,9 @@
  * Flujo:
  *   Paciente responde "1" o "confirmar" → buscar su próximo turno → confirmar → responder ok
  *   Paciente responde "2" o "cancelar"  → buscar su próximo turno → cancelar  → responder ok
+ *
+ * POST /api/webhooks/twilio — Twilio envía ButtonPayload tipo turno_confirmar:<uuid> / turno_cancelar:<uuid>
+ *   (configurar en Twilio el mismo endpoint o usar botones con ese payload; sin respuesta TwiML por ahora).
  */
 
 const turnoModel = require('../models/turno.model');
@@ -154,6 +157,102 @@ function formatearFechaHora(val) {
   }
 }
 
+const TWIML_EMPTY = '<?xml version="1.0" encoding="UTF-8"?><Response></Response>';
+
+/** Recorte para logs (evitar líneas enormes). */
+function previewStr(s, max = 200) {
+  if (s == null || s === '') return '';
+  const t = String(s);
+  return t.length <= max ? t : `${t.slice(0, max)}…`;
+}
+
+/**
+ * Lógica compartida: confirmar turno por UUID (GET público o POST Twilio con payload).
+ * @returns {Promise<{ resultado: 'confirmado'|'ya_confirmado'|'ya_cancelado'|'no_encontrado', turno?: object }>}
+ */
+async function confirmarTurnoPorId(turnoId) {
+  const turno = await turnoModel.findById(turnoId);
+  if (!turno) return { resultado: 'no_encontrado' };
+  if (turno.estado === 'cancelado') return { resultado: 'ya_cancelado', turno };
+  if (turno.estado === 'confirmado') return { resultado: 'ya_confirmado', turno };
+  await turnoModel.confirm(turnoId);
+  logger.info(`Turno ${turnoId} confirmado (confirmarTurnoPorId)`);
+  const actualizado = await turnoModel.findById(turnoId);
+  return { resultado: 'confirmado', turno: actualizado || turno };
+}
+
+/**
+ * Lógica compartida: cancelar turno por UUID.
+ * @returns {Promise<{ resultado: 'cancelado'|'ya_cancelado'|'no_cancelable'|'no_encontrado', turno?: object }>}
+ */
+async function cancelarTurnoPorId(turnoId) {
+  const turno = await turnoModel.findById(turnoId);
+  if (!turno) return { resultado: 'no_encontrado' };
+  if (turno.estado === 'cancelado') return { resultado: 'ya_cancelado', turno };
+  if (['completado', 'ausente'].includes(turno.estado)) return { resultado: 'no_cancelable', turno };
+  await turnoModel.cancel(turnoId, 'Cancelado por el paciente vía WhatsApp', null);
+  logger.info(`Turno ${turnoId} cancelado (cancelarTurnoPorId)`);
+  const actualizado = await turnoModel.findById(turnoId);
+  return { resultado: 'cancelado', turno: actualizado || turno };
+}
+
+/**
+ * POST /api/webhooks/twilio
+ * Body form-urlencoded: ButtonPayload o Body con formato turno_confirmar:<uuid> | turno_cancelar:<uuid>
+ */
+const twilioWebhook = async (req, res) => {
+  const b = req.body || {};
+  try {
+    const payload = String(b.ButtonPayload || b.Body || '').trim();
+
+    logger.info('POST /api/webhooks/twilio recibido', {
+      messageSid: b.MessageSid || null,
+      from: b.From || null,
+      hasButtonPayload: Boolean(b.ButtonPayload),
+      hasBody: Boolean(b.Body),
+      payloadPreview: previewStr(payload, 180) || '(vacío)',
+    });
+
+    if (!payload) {
+      logger.warn('POST /api/webhooks/twilio: sin ButtonPayload ni Body; claves body:', Object.keys(b));
+      return res.status(200).type('text/xml').send(TWIML_EMPTY);
+    }
+
+    let m = /^turno_confirmar:(.+)$/i.exec(payload);
+    if (m) {
+      const turnoId = m[1].trim();
+      if (!turnoId) {
+        logger.warn('POST /api/webhooks/twilio: turno_confirmar sin UUID en payload');
+      } else {
+        const r = await confirmarTurnoPorId(turnoId);
+        logger.info(`POST /api/webhooks/twilio confirmar turno=${turnoId} -> ${r.resultado}`);
+      }
+      return res.status(200).type('text/xml').send(TWIML_EMPTY);
+    }
+
+    m = /^turno_cancelar:(.+)$/i.exec(payload);
+    if (m) {
+      const turnoId = m[1].trim();
+      if (!turnoId) {
+        logger.warn('POST /api/webhooks/twilio: turno_cancelar sin UUID en payload');
+      } else {
+        const r = await cancelarTurnoPorId(turnoId);
+        logger.info(`POST /api/webhooks/twilio cancelar turno=${turnoId} -> ${r.resultado}`);
+      }
+      return res.status(200).type('text/xml').send(TWIML_EMPTY);
+    }
+
+    logger.warn(
+      'POST /api/webhooks/twilio: payload no reconocido (esperado turno_confirmar:<uuid> o turno_cancelar:<uuid>)',
+      { preview: previewStr(payload, 300) }
+    );
+    return res.status(200).type('text/xml').send(TWIML_EMPTY);
+  } catch (err) {
+    logger.error('POST /api/webhooks/twilio error:', err);
+    return res.status(500).type('text/xml').send(TWIML_EMPTY);
+  }
+};
+
 /**
  * GET /api/webhooks/turno/:id/confirmar
  * El paciente llega aquí tocando el botón CTA de la plantilla.
@@ -163,19 +262,19 @@ const confirmarPorUrl = async (req, res) => {
   const { id } = req.params;
   prepareTurnoWebhookHtmlResponse(res);
   try {
-    const turno = await turnoModel.findById(id);
-    if (!turno) {
+    const r = await confirmarTurnoPorId(id);
+    if (r.resultado === 'no_encontrado') {
       return res.status(404).send(htmlResultado(req, 'error', '⚠️ Turno no encontrado', 'No encontramos el turno solicitado. Puede que ya haya sido cancelado o no exista.'));
     }
-    if (turno.estado === 'cancelado') {
+    if (r.resultado === 'ya_cancelado') {
       return res.send(htmlResultado(req, 'warning', '⚠️ Turno Cancelado', 'Este turno ya fue cancelado previamente. Comunicate con el consultorio para reprogramarlo.'));
     }
-    if (turno.estado === 'confirmado') {
-      return res.send(htmlResultado(req, 'success', '✅ Turno Confirmado', `Tu turno del ${formatearFechaHora(turno.fecha_hora_inicio)} ya estaba confirmado. ¡Te esperamos!`));
+    if (r.resultado === 'ya_confirmado') {
+      const t = r.turno;
+      return res.send(htmlResultado(req, 'success', '✅ Turno Confirmado', `Tu turno del ${formatearFechaHora(t.fecha_hora_inicio)} ya estaba confirmado. ¡Te esperamos!`));
     }
-    await turnoModel.confirm(id);
-    logger.info(`Turno ${id} confirmado por paciente via URL`);
-    return res.send(htmlResultado(req, 'success', '✅ Turno Confirmado', `Tu turno del <strong>${formatearFechaHora(turno.fecha_hora_inicio)}</strong> fue confirmado correctamente. ¡Te esperamos!`));
+    const t = r.turno;
+    return res.send(htmlResultado(req, 'success', '✅ Turno Confirmado', `Tu turno del <strong>${formatearFechaHora(t.fecha_hora_inicio)}</strong> fue confirmado correctamente. ¡Te esperamos!`));
   } catch (err) {
     logger.error(`Error confirmando turno ${id} via URL:`, err);
     return res.status(500).send(htmlResultado(req, 'error', 'Error', 'Ocurrió un error al confirmar el turno. Por favor comunicate con el consultorio.'));
@@ -191,19 +290,18 @@ const cancelarPorUrl = async (req, res) => {
   const { id } = req.params;
   prepareTurnoWebhookHtmlResponse(res);
   try {
-    const turno = await turnoModel.findById(id);
-    if (!turno) {
+    const r = await cancelarTurnoPorId(id);
+    if (r.resultado === 'no_encontrado') {
       return res.status(404).send(htmlResultado(req, 'error', 'Turno no encontrado', 'No encontramos el turno solicitado.'));
     }
-    if (turno.estado === 'cancelado') {
+    if (r.resultado === 'ya_cancelado') {
       return res.send(htmlResultado(req, 'warning', '⚠️ Turno Cancelado', 'Este turno ya estaba cancelado previamente.'));
     }
-    if (['completado', 'ausente'].includes(turno.estado)) {
+    if (r.resultado === 'no_cancelable') {
       return res.send(htmlResultado(req, 'warning', '⚠️ No se puede cancelar', 'Este turno ya fue completado o marcado como ausente.'));
     }
-    await turnoModel.cancel(id, 'Cancelado por el paciente vía WhatsApp', null);
-    logger.info(`Turno ${id} cancelado por paciente via URL`);
-    return res.send(htmlResultado(req, 'cancel', '❌ Turno Cancelado', `Tu turno del <strong>${formatearFechaHora(turno.fecha_hora_inicio)}</strong> fue cancelado. Si querés reprogramarlo, comunicate con el consultorio.`));
+    const t = r.turno;
+    return res.send(htmlResultado(req, 'cancel', '❌ Turno Cancelado', `Tu turno del <strong>${formatearFechaHora(t.fecha_hora_inicio)}</strong> fue cancelado. Si querés reprogramarlo, comunicate con el consultorio.`));
   } catch (err) {
     logger.error(`Error cancelando turno ${id} via URL:`, err);
     return res.status(500).send(htmlResultado(req, 'error', 'Error', 'Ocurrió un error al cancelar el turno. Por favor comunicate con el consultorio.'));
@@ -258,4 +356,9 @@ function htmlResultado(req, tipo, titulo, mensaje) {
 </html>`;
 }
 
-module.exports = { webhookIncoming, confirmarPorUrl, cancelarPorUrl };
+module.exports = {
+  webhookIncoming,
+  twilioWebhook,
+  confirmarPorUrl,
+  cancelarPorUrl,
+};
