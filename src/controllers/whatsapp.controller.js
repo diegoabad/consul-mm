@@ -25,6 +25,25 @@ const PALABRAS_CONFIRMAR = ['confirmar', 'confirmo', '1', 'si', 'sí', 'ok', 'ye
 const PALABRAS_CANCELAR = ['cancelar', 'cancelo', '2', 'no', 'cancel'];
 
 /**
+ * WhatsApp (sobre todo Web) abre los enlaces de botones CTA en un visor embebido.
+ * Helmet pone X-Frame-Options: SAMEORIGIN → el iframe queda en blanco y parece que "no abre nada".
+ */
+function prepareTurnoWebhookHtmlResponse(res) {
+  res.removeHeader('X-Frame-Options');
+  res.setHeader(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: https:",
+      "base-uri 'self'",
+      "form-action 'self'",
+      'frame-ancestors *',
+    ].join('; ')
+  );
+}
+
+/**
  * Normaliza un string de teléfono a dígitos limpios para comparar.
  * Elimina +, espacios, guiones, etc.
  */
@@ -142,23 +161,24 @@ function formatearFechaHora(val) {
  */
 const confirmarPorUrl = async (req, res) => {
   const { id } = req.params;
+  prepareTurnoWebhookHtmlResponse(res);
   try {
     const turno = await turnoModel.findById(id);
     if (!turno) {
-      return res.status(404).send(htmlResultado('error', '⚠️ Turno no encontrado', 'No encontramos el turno solicitado. Puede que ya haya sido cancelado o no exista.'));
+      return res.status(404).send(htmlResultado(req, 'error', '⚠️ Turno no encontrado', 'No encontramos el turno solicitado. Puede que ya haya sido cancelado o no exista.'));
     }
     if (turno.estado === 'cancelado') {
-      return res.send(htmlResultado('warning', '⚠️ Turno Cancelado', 'Este turno ya fue cancelado previamente. Comunicate con el consultorio para reprogramarlo.'));
+      return res.send(htmlResultado(req, 'warning', '⚠️ Turno Cancelado', 'Este turno ya fue cancelado previamente. Comunicate con el consultorio para reprogramarlo.'));
     }
     if (turno.estado === 'confirmado') {
-      return res.send(htmlResultado('success', '✅ Turno Confirmado', `Tu turno del ${formatearFechaHora(turno.fecha_hora_inicio)} ya estaba confirmado. ¡Te esperamos!`));
+      return res.send(htmlResultado(req, 'success', '✅ Turno Confirmado', `Tu turno del ${formatearFechaHora(turno.fecha_hora_inicio)} ya estaba confirmado. ¡Te esperamos!`));
     }
     await turnoModel.confirm(id);
     logger.info(`Turno ${id} confirmado por paciente via URL`);
-    return res.send(htmlResultado('success', '✅ Turno Confirmado', `Tu turno del <strong>${formatearFechaHora(turno.fecha_hora_inicio)}</strong> fue confirmado correctamente. ¡Te esperamos!`));
+    return res.send(htmlResultado(req, 'success', '✅ Turno Confirmado', `Tu turno del <strong>${formatearFechaHora(turno.fecha_hora_inicio)}</strong> fue confirmado correctamente. ¡Te esperamos!`));
   } catch (err) {
     logger.error(`Error confirmando turno ${id} via URL:`, err);
-    return res.status(500).send(htmlResultado('error', 'Error', 'Ocurrió un error al confirmar el turno. Por favor comunicate con el consultorio.'));
+    return res.status(500).send(htmlResultado(req, 'error', 'Error', 'Ocurrió un error al confirmar el turno. Por favor comunicate con el consultorio.'));
   }
 };
 
@@ -169,33 +189,38 @@ const confirmarPorUrl = async (req, res) => {
  */
 const cancelarPorUrl = async (req, res) => {
   const { id } = req.params;
+  prepareTurnoWebhookHtmlResponse(res);
   try {
     const turno = await turnoModel.findById(id);
     if (!turno) {
-      return res.status(404).send(htmlResultado('error', 'Turno no encontrado', 'No encontramos el turno solicitado.'));
+      return res.status(404).send(htmlResultado(req, 'error', 'Turno no encontrado', 'No encontramos el turno solicitado.'));
     }
     if (turno.estado === 'cancelado') {
-      return res.send(htmlResultado('warning', '⚠️ Turno Cancelado', 'Este turno ya estaba cancelado previamente.'));
+      return res.send(htmlResultado(req, 'warning', '⚠️ Turno Cancelado', 'Este turno ya estaba cancelado previamente.'));
     }
     if (['completado', 'ausente'].includes(turno.estado)) {
-      return res.send(htmlResultado('warning', '⚠️ No se puede cancelar', 'Este turno ya fue completado o marcado como ausente.'));
+      return res.send(htmlResultado(req, 'warning', '⚠️ No se puede cancelar', 'Este turno ya fue completado o marcado como ausente.'));
     }
     await turnoModel.cancel(id, 'Cancelado por el paciente vía WhatsApp', null);
     logger.info(`Turno ${id} cancelado por paciente via URL`);
-    return res.send(htmlResultado('cancel', '❌ Turno Cancelado', `Tu turno del <strong>${formatearFechaHora(turno.fecha_hora_inicio)}</strong> fue cancelado. Si querés reprogramarlo, comunicate con el consultorio.`));
+    return res.send(htmlResultado(req, 'cancel', '❌ Turno Cancelado', `Tu turno del <strong>${formatearFechaHora(turno.fecha_hora_inicio)}</strong> fue cancelado. Si querés reprogramarlo, comunicate con el consultorio.`));
   } catch (err) {
     logger.error(`Error cancelando turno ${id} via URL:`, err);
-    return res.status(500).send(htmlResultado('error', 'Error', 'Ocurrió un error al cancelar el turno. Por favor comunicate con el consultorio.'));
+    return res.status(500).send(htmlResultado(req, 'error', 'Error', 'Ocurrió un error al cancelar el turno. Por favor comunicate con el consultorio.'));
   }
 };
 
 /**
  * Genera una página HTML simple con el resultado de la acción.
+ * @param {import('express').Request} req - para URL absoluta del logo (visores embebidos)
  * @param {'success'|'cancel'|'warning'|'error'} tipo
  * @param {string} titulo
  * @param {string} mensaje
  */
-function htmlResultado(tipo, titulo, mensaje) {
+function htmlResultado(req, tipo, titulo, mensaje) {
+  const proto = (req.get('x-forwarded-proto') || req.protocol || 'https').split(',')[0].trim();
+  const host = req.get('host');
+  const logoSrc = host ? `${proto}://${host}/public/logo.png` : '/public/logo.png';
   const colores = {
     success: { bg: '#f0fdf4', border: '#22c55e', icon: '✅', iconColor: '#16a34a' },
     cancel:  { bg: '#fef2f2', border: '#ef4444', icon: '❌', iconColor: '#dc2626' },
@@ -222,7 +247,7 @@ function htmlResultado(tipo, titulo, mensaje) {
 </head>
 <body>
   <div class="logo">
-    <img src="/public/logo.png" alt="Cogniare" />
+    <img src="${logoSrc}" alt="Cogniare" />
   </div>
   <div class="result-box">
     <div class="titulo">${titulo}</div>

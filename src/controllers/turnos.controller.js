@@ -317,19 +317,37 @@ const create = async (req, res, next) => {
           }
         });
     }
-    // Envío de WhatsApp: apenas se crea el turno se manda el recordatorio
+    // Envío de WhatsApp al crear turno: mismos datos y plantilla que cron / envío manual
+    // (findParaRecordatorioById + enviarRecordatorioTurno; TWILIO_RECORDATORIO_VARS + Content SID del .env).
     if (process.env.WHATSAPP_RECORDATORIO_AL_CREAR === 'true') {
-      // Usar findParaRecordatorioById para obtener datos completos del paciente
-      // (incluye notificaciones_activas para respetar la preferencia individual)
-      turnoModel.findParaRecordatorioById(nuevoTurno.id)
-        .then((turnoParaWsp) => {
-          if (!turnoParaWsp) return;
-          return enviarRecordatorioTurno(turnoParaWsp)
-            .then((resultado) => {
-              if (resultado) return turnoModel.marcarRecordatorioEnviado(turnoParaWsp.id);
-            });
+      turnoModel
+        .findParaRecordatorioById(nuevoTurno.id)
+        .then(async (turnoParaWsp) => {
+          if (!turnoParaWsp) {
+            logger.warn(`WhatsApp al crear turno: sin fila para recordatorio (turno ${nuevoTurno.id})`);
+            return;
+          }
+          try {
+            const resultado = await enviarRecordatorioTurno(turnoParaWsp);
+            if (resultado) {
+              await turnoModel.marcarRecordatorioEnviado(turnoParaWsp.id);
+              logger.info(`WhatsApp recordatorio al crear turno OK | turno ${turnoParaWsp.id}`);
+            } else {
+              logger.warn(
+                `WhatsApp al crear turno omitido (null) | turno ${turnoParaWsp.id} — sin WhatsApp, notificaciones off o recordatorio off`
+              );
+            }
+          } catch (err) {
+            const errorMsg = err?.message || String(err);
+            logger.error(`Error enviando WhatsApp al crear turno ${turnoParaWsp.id}: ${errorMsg}`);
+            try {
+              await turnoModel.marcarRecordatorioFallido(turnoParaWsp.id, `[al_crear] ${errorMsg}`);
+            } catch (_) {
+              /* no bloquear */
+            }
+          }
         })
-        .catch((err) => logger.error('Error enviando WhatsApp al crear turno:', err.message));
+        .catch((err) => logger.error('Error preparando WhatsApp al crear turno:', err.message));
     }
 
     res.status(201).json(buildResponse(true, turnoCompleto, 'Turno creado exitosamente'));

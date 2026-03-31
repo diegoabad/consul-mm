@@ -49,7 +49,13 @@ async function procesarRecordatorios() {
   for (const turno of pendientes) {
     const intento = (turno.recordatorio_intentos ?? 0) + 1;
     try {
-      await enviarRecordatorioTurno(turno);
+      const resultado = await enviarRecordatorioTurno(turno);
+      if (resultado == null) {
+        logger.warn(
+          `[omitido] Recordatorio no enviado (retorno null) turno ${turno.id} — revisar WhatsApp del paciente, notificaciones o config del profesional`
+        );
+        continue;
+      }
       await turnoModel.marcarRecordatorioEnviado(turno.id);
       logger.info(`[OK] Recordatorio enviado | turno ${turno.id} | intento ${intento}`);
       enviados++;

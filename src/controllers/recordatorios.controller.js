@@ -198,7 +198,18 @@ async function enviarManual(req, res) {
 
     const resultado = await enviarRecordatorioTurno(turno);
     if (!resultado) {
-      return res.status(422).json(buildResponse(false, null, 'No se pudo enviar: el paciente no tiene número WhatsApp o tiene las notificaciones desactivadas'));
+      if (turno.recordatorio_activo === false) {
+        return res.status(422).json(
+          buildResponse(false, null, 'No se pudo enviar: el profesional tiene los recordatorios WhatsApp desactivados')
+        );
+      }
+      return res.status(422).json(
+        buildResponse(
+          false,
+          null,
+          'No se pudo enviar: el paciente no tiene número WhatsApp o tiene las notificaciones desactivadas'
+        )
+      );
     }
     await turnoModel.marcarRecordatorioEnviado(id);
 

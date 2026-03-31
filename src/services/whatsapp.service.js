@@ -3,7 +3,6 @@
  */
 
 const logger = require('../utils/logger');
-const logModel = require('../models/log.model');
 
 let twilioClient = null;
 
@@ -17,6 +16,57 @@ function getClient() {
   const twilio = require('twilio');
   twilioClient = twilio(accountSid, authToken);
   return twilioClient;
+}
+
+/** Estados que indican que Twilio no aceptó / no entregó el mensaje (no marcar recordatorio enviado). */
+const TWILIO_STATUS_RECHAZADO = new Set(['failed', 'undelivered', 'canceled']);
+
+/**
+ * Tras messages.create, Twilio suele devolver queued/sent/… Si viene errorCode o estado de fallo,
+ * o un estado desconocido con valor definido, no consideramos el envío aceptado → no marcar recordatorio.
+ */
+const TWILIO_STATUS_ACEPTABLE_TRAS_CREATE = new Set([
+  'queued',
+  'accepted',
+  'scheduled',
+  'sending',
+  'sent',
+  'delivered',
+  'read',
+  'receiving', // legado
+]);
+
+/**
+ * Twilio suele lanzar RestException en fallos HTTP, pero a veces devuelve 201 con errorCode/status en el cuerpo.
+ * Sin esto el backend marca "enviado" aunque la API indique rechazo o estado inválido.
+ */
+function assertTwilioMessageOk(message, contextLabel) {
+  if (!message || typeof message !== 'object') {
+    throw new Error(`Twilio [${contextLabel}]: respuesta inválida o vacía`);
+  }
+  const sid = message.sid;
+  if (!sid || typeof sid !== 'string') {
+    throw new Error(`Twilio [${contextLabel}]: respuesta sin Message SID`);
+  }
+  const statusRaw = message.status;
+  const status = String(statusRaw ?? '').toLowerCase().trim();
+  const code = message.errorCode ?? message.error_code;
+  const msg = message.errorMessage ?? message.error_message ?? '';
+  if (code != null && code !== '' && Number(code) !== 0) {
+    const detail = msg ? `${msg}` : 'sin mensaje';
+    throw new Error(`Twilio [${contextLabel}] código ${code}: ${detail} (sid=${sid})`);
+  }
+  if (TWILIO_STATUS_RECHAZADO.has(status)) {
+    throw new Error(
+      `Twilio [${contextLabel}] estado "${message.status}"${msg ? `: ${msg}` : ''} (sid=${sid})`
+    );
+  }
+  if (status && !TWILIO_STATUS_ACEPTABLE_TRAS_CREATE.has(status)) {
+    throw new Error(
+      `Twilio [${contextLabel}] estado no aceptado "${message.status}" (sid=${sid})`
+    );
+  }
+  logger.info(`Twilio [${contextLabel}] aceptado sid=${sid} status=${message.status || '?'}`);
 }
 
 /**
@@ -51,7 +101,7 @@ async function enviarMensaje(to, body) {
 
   const client = getClient();
   const message = await client.messages.create({ from: fromWhatsApp, to: toWhatsApp, body });
-  logger.info(`WhatsApp enviado a ${toWhatsApp} | SID: ${message.sid}`);
+  assertTwilioMessageOk(message, 'texto_plano');
   return message;
 }
 
@@ -78,24 +128,19 @@ async function enviarMensajePlantilla(to, contentSid, variables) {
     contentSid,
     contentVariables: JSON.stringify(variables),
   });
-  logger.info(`WhatsApp (plantilla) enviado a ${toWhatsApp} | SID: ${message.sid}`);
+  assertTwilioMessageOk(message, 'plantilla');
   return message;
 }
 
 /**
  * Enviar recordatorio de turno por WhatsApp.
- * - Si TWILIO_CONTENT_SID_RECORDATORIO está configurado → usa la plantilla con botones CTA.
- * - Si no → manda texto plano con instrucciones "1" o "2".
+ * - Si TWILIO_CONTENT_SID_RECORDATORIO está configurado → plantilla Content (ver TWILIO_RECORDATORIO_VARS).
+ * - Si no → texto plano con links si hay API_PUBLIC_URL.
  *
- * Variables de la plantilla:
- *   {{1}} = nombre del paciente
- *   {{2}} = nombre del profesional (con especialidad)
- *   {{3}} = fecha y hora del turno
- *   {{4}} = turno_id  ← usado en la URL de los botones CTA
- *
- * Los botones CTA de la plantilla deben apuntar a:
- *   Confirmar → https://tudominio.com/api/webhooks/turno/{{4}}/confirmar
- *   Cancelar  → https://tudominio.com/api/webhooks/turno/{{4}}/cancelar
+ * TWILIO_RECORDATORIO_VARS=3 (default si no está definido):
+ *   {{1}} día, {{2}} hora, {{3}} profesional (+ especialidad en el mismo texto).
+ * TWILIO_RECORDATORIO_VARS=5 (plantilla CTA con /turno/{{5}}/confirmar|cancelar):
+ *   {{1}} paciente, {{2}} profesional, {{3}} especialidad (sin vacío), {{4}} fecha y hora, {{5}} UUID del turno.
  *
  * @param {Object} turno
  */
@@ -132,19 +177,36 @@ async function enviarRecordatorioTurno(turno) {
   }
 
   const fecha = formatearFechaHora(turno.fecha_hora_inicio);
+  const { dia: fechaDia, hora: fechaHora } = separarDiaYHoraDesdeFormateado(fecha);
   const nombrePaciente = titleCase(`${turno.paciente_nombre || ''} ${turno.paciente_apellido || ''}`.trim());
   const nombreProfesional = titleCase(`${turno.profesional_nombre || ''} ${turno.profesional_apellido || ''}`.trim());
   const especialidad = turno.profesional_especialidad ? titleCase(turno.profesional_especialidad) : '';
+  let profesionalParaPlantilla = especialidad
+    ? `${nombreProfesional} - ${especialidad}`
+    : nombreProfesional;
+  profesionalParaPlantilla = profesionalParaPlantilla.trim() || 'Consultorio';
 
   const contentSid = process.env.TWILIO_CONTENT_SID_RECORDATORIO;
+  const recordatorioVars = String(process.env.TWILIO_RECORDATORIO_VARS || '3').trim();
 
   if (contentSid) {
+    if (recordatorioVars === '5') {
+      const esp = especialidad.trim() || 'Consulta';
+      const prof = nombreProfesional.trim() || 'Profesional';
+      const pac = nombrePaciente.trim() || 'Paciente';
+      const fechaTxt = fecha.trim() || '-';
+      return enviarMensajePlantilla(telefono, contentSid, {
+        '1': pac,
+        '2': prof,
+        '3': esp,
+        '4': fechaTxt,
+        '5': String(turno.id),
+      });
+    }
     return enviarMensajePlantilla(telefono, contentSid, {
-      '1': nombrePaciente,
-      '2': nombreProfesional,
-      '3': especialidad,
-      '4': fecha,
-      '5': turno.id,
+      '1': fechaDia.trim() || '-',
+      '2': fechaHora.trim() || '-',
+      '3': profesionalParaPlantilla,
     });
   }
 
@@ -170,6 +232,14 @@ async function enviarRecordatorioTurno(turno) {
   }
 
   return enviarMensaje(telefono, lines.join('\n'));
+}
+
+/** Parte el texto de formatearFechaHora en día y hora para plantillas tipo "dia {{1}} a las {{2}}". */
+function separarDiaYHoraDesdeFormateado(formateado) {
+  if (!formateado || formateado === '-') return { dia: '-', hora: '-' };
+  const parts = String(formateado).split(' a las ');
+  if (parts.length >= 2) return { dia: parts[0].trim(), hora: parts.slice(1).join(' a las ').trim() };
+  return { dia: formateado, hora: '-' };
 }
 
 function formatearFechaHora(val) {
