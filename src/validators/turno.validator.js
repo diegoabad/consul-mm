@@ -121,6 +121,8 @@ const createRecurrenciaSchema = Joi.object({
   paciente_id: Joi.string().uuid().required(),
   motivo: Joi.string().optional().allow(null, ''),
   permiso_fuera_agenda: Joi.boolean().optional(),
+  /** Token devuelto por POST /turnos/slots/validar-batch cuando todos los slots ok; evita revalidar en este paso */
+  validacion_token: Joi.string().optional().allow(null, ''),
   serie: Joi.object({
     frecuencia: Joi.string().valid('semanal', 'quincenal', 'mensual').required(),
     mensual_modo: Joi.string().valid('nth_weekday', 'dia_calendario').allow(null).optional(),

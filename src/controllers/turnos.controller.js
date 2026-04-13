@@ -21,6 +21,10 @@ const { ESTADOS_TURNO } = require('../utils/constants');
 const { pool } = require('../config/database');
 const { generarOcurrencias } = require('../services/recurrenciaFechas.service');
 const { evaluarSlotTurno, evaluarSlotsTurnoBatch } = require('../services/turnoSlotValidation.service');
+const {
+  emitirTokenValidacionSlots,
+  verificarTokenParaOcurrencias
+} = require('../services/slotsValidacionToken.service');
 
 const RECURRENCIA_MAX_OCURRENCIAS = parseInt(process.env.RECURRENCIA_MAX_OCURRENCIAS || '52', 10);
 const RECURRENCIA_MESES_MAX = parseInt(process.env.RECURRENCIA_MESES_MAX || '6', 10);
@@ -673,6 +677,7 @@ const createRecurrencia = async (req, res, next) => {
       paciente_id,
       motivo,
       permiso_fuera_agenda = false,
+      validacion_token: validacionTokenBody,
       serie: serieMeta,
       ocurrencias
     } = req.body;
@@ -710,23 +715,37 @@ const createRecurrencia = async (req, res, next) => {
       return res.status(400).json(buildResponse(false, null, 'No se pueden crear turnos para pacientes inactivos'));
     }
 
-    const evalsSerie = await evaluarSlotsTurnoBatch({
-      profesional_id,
-      paciente_id,
-      profesional,
-      paciente,
-      slots: ocurrencias.map((o) => ({
-        fecha_hora_inicio: new Date(o.fecha_hora_inicio),
-        fecha_hora_fin: new Date(o.fecha_hora_fin),
-        permiso_fuera_agenda: o.permiso_fuera_agenda != null ? Boolean(o.permiso_fuera_agenda) : Boolean(permiso_fuera_agenda)
-      }))
-    });
-    for (let i = 0; i < evalsSerie.length; i++) {
-      const ev = evalsSerie[i];
-      if (!ev.ok) {
-        return res.status(400).json(
-          buildResponse(false, { fila: i + 1, flags: ev.flags }, ev.mensaje || 'Validación fallida')
-        );
+    const slotsParaValidar = ocurrencias.map((o) => ({
+      fecha_hora_inicio: new Date(o.fecha_hora_inicio),
+      fecha_hora_fin: new Date(o.fecha_hora_fin),
+      permiso_fuera_agenda: o.permiso_fuera_agenda != null ? Boolean(o.permiso_fuera_agenda) : Boolean(permiso_fuera_agenda)
+    }));
+
+    const tokenOk =
+      validacionTokenBody &&
+      verificarTokenParaOcurrencias(validacionTokenBody, {
+        profesional_id,
+        paciente_id,
+        usuario_id: req.user.id,
+        ocurrencias: slotsParaValidar,
+        permiso_fuera_agenda_default: Boolean(permiso_fuera_agenda)
+      });
+
+    if (!tokenOk) {
+      const evalsSerie = await evaluarSlotsTurnoBatch({
+        profesional_id,
+        paciente_id,
+        profesional,
+        paciente,
+        slots: slotsParaValidar
+      });
+      for (let i = 0; i < evalsSerie.length; i++) {
+        const ev = evalsSerie[i];
+        if (!ev.ok) {
+          return res.status(400).json(
+            buildResponse(false, { fila: i + 1, flags: ev.flags }, ev.mensaje || 'Validación fallida')
+          );
+        }
       }
     }
 
@@ -857,7 +876,25 @@ const validarSlotsBatch = async (req, res, next) => {
       mensaje: ev.mensaje || null
     }));
 
-    res.json(buildResponse(true, { resultados }, 'Validación completada'));
+    const todosOk = evaluaciones.every((ev) => ev.ok);
+    let validacion_token = null;
+    if (todosOk) {
+      validacion_token = emitirTokenValidacionSlots({
+        profesional_id,
+        paciente_id,
+        usuario_id: req.user.id,
+        slots,
+        permiso_fuera_agenda_default: Boolean(permiso_fuera_agenda)
+      });
+    }
+
+    res.json(
+      buildResponse(
+        true,
+        { resultados, validacion_token },
+        'Validación completada'
+      )
+    );
   } catch (error) {
     logger.error('Error en validarSlotsBatch:', error);
     next(error);
