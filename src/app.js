@@ -85,6 +85,18 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
+// Log explícito de cada petición (método + URL). Activar con LOG_REQUEST_URLS=true (p. ej. en Render).
+if (process.env.LOG_REQUEST_URLS === 'true') {
+  app.use((req, _res, next) => {
+    const bits = [`[entrada] ${req.method} ${req.originalUrl}`];
+    if (req.headers['x-forwarded-for']) bits.push(`xff=${req.headers['x-forwarded-for']}`);
+    if (req.headers['x-forwarded-host']) bits.push(`xfh=${req.headers['x-forwarded-host']}`);
+    if (req.headers.origin) bits.push(`origin=${req.headers.origin}`);
+    logger.info(bits.join(' | '));
+    next();
+  });
+}
+
 // Middlewares de seguridad (Helmet permite cross-origin para API consumida por SPA en otro dominio)
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' }
