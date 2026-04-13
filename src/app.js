@@ -17,16 +17,24 @@ const logger = require('./utils/logger');
 
 const app = express();
 
-// Trust proxy: necesario cuando la app está detrás de un load balancer (Azure, Render, etc.)
-// para que express-rate-limit identifique correctamente la IP del cliente (X-Forwarded-For)
+// Trust proxy: detrás de Render / nginx (X-Forwarded-For para rate-limit)
 app.set('trust proxy', 1);
 
-// CORS primero (antes de Helmet): asegura cabeceras en preflight y respuestas de error.
-// CORS_ORIGIN: orígenes exactos separados por coma, ej. https://tu-app.netlify.app,http://localhost:5173
-// CORS_NETLIFY_PREVIEWS=true: además permite cualquier https://*.netlify.app (deploy previews).
-const corsOrigins = process.env.CORS_ORIGIN
-  ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim()).filter(Boolean)
-  : [];
+// ─── CORS: va PRIMERO (antes de Helmet, body parser y rutas) ─────────────────
+// No pongas express.json() ni router antes de esto: el preflight OPTIONS debe
+// recibir cabeceras CORS sin pasar por parsers ni rutas que no existan para OPTIONS.
+//
+// Orígenes: CORS_ORIGIN o ALLOWED_ORIGINS (mismo formato, coma-separados).
+// En Render: CORS_ORIGIN=https://tu-app.netlify.app,http://localhost:5173
+// CORS_NETLIFY_PREVIEWS=true → también permite https://*.netlify.app
+//
+// Importante: usar array o true en `origin`, no un callback que haga cb(null, false)
+// al denegar: en cors@2 eso hace next() y el OPTIONS cae en 404 sin cabeceras CORS.
+const originsRaw = process.env.CORS_ORIGIN || process.env.ALLOWED_ORIGINS || '';
+const corsOrigins = originsRaw
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 const netlifyOriginRegex = /^https:\/\/[a-zA-Z0-9-]+\.netlify\.app$/;
 const corsOriginValue =
