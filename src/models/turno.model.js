@@ -126,11 +126,14 @@ const findAllPaginated = async (filters = {}) => {
         params.push(filters.estado);
       }
     }
-    if (filters.fecha_inicio) {
+    // Mismo criterio que findAll: la columna es TIMESTAMP sin TZ con componentes UTC (ver dateToUTCString / toISOUTC).
+    if (filters.fecha_inicio && filters.fecha_fin) {
+      where += ` AND (t.fecha_hora_inicio AT TIME ZONE 'UTC') >= $${paramIndex++}::timestamptz AND (t.fecha_hora_inicio AT TIME ZONE 'UTC') <= $${paramIndex++}::timestamptz`;
+      params.push(filters.fecha_inicio, filters.fecha_fin);
+    } else if (filters.fecha_inicio) {
       where += ` AND t.fecha_hora_inicio >= $${paramIndex++}`;
       params.push(filters.fecha_inicio);
-    }
-    if (filters.fecha_fin) {
+    } else if (filters.fecha_fin) {
       where += ` AND t.fecha_hora_inicio <= $${paramIndex++}`;
       params.push(filters.fecha_fin);
     }
@@ -158,7 +161,7 @@ const findAllPaginated = async (filters = {}) => {
         u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido, u_prof.email as profesional_email,
         pac.nombre as paciente_nombre, pac.apellido as paciente_apellido, pac.dni as paciente_dni, pac.telefono as paciente_telefono, pac.whatsapp as paciente_whatsapp, pac.email as paciente_email
       ${fromClause}
-      ORDER BY t.fecha_hora_inicio DESC
+      ORDER BY (t.fecha_hora_inicio AT TIME ZONE 'UTC') DESC
       LIMIT $${paramIndex++} OFFSET $${paramIndex}
     `;
     const dataResult = await query(dataSql, dataParams);
@@ -230,19 +233,20 @@ const findByProfesional = async (profesionalId, fechaInicio = null, fechaFin = n
     `;
     const params = [profesionalId];
     let paramIndex = 2;
-    
-    if (fechaInicio) {
+
+    if (fechaInicio && fechaFin) {
+      sql += ` AND (t.fecha_hora_inicio AT TIME ZONE 'UTC') >= $${paramIndex++}::timestamptz AND (t.fecha_hora_inicio AT TIME ZONE 'UTC') <= $${paramIndex++}::timestamptz`;
+      params.push(fechaInicio, fechaFin);
+    } else if (fechaInicio) {
       sql += ` AND t.fecha_hora_inicio >= $${paramIndex++}`;
       params.push(fechaInicio);
-    }
-    
-    if (fechaFin) {
+    } else if (fechaFin) {
       sql += ` AND t.fecha_hora_inicio <= $${paramIndex++}`;
       params.push(fechaFin);
     }
-    
+
     sql += ' ORDER BY t.fecha_hora_inicio ASC';
-    
+
     const result = await query(sql, params);
     const rows = result.rows.map((r) => ({
       ...r,
@@ -279,19 +283,20 @@ const findByPaciente = async (pacienteId, fechaInicio = null, fechaFin = null) =
     `;
     const params = [pacienteId];
     let paramIndex = 2;
-    
-    if (fechaInicio) {
+
+    if (fechaInicio && fechaFin) {
+      sql += ` AND (t.fecha_hora_inicio AT TIME ZONE 'UTC') >= $${paramIndex++}::timestamptz AND (t.fecha_hora_inicio AT TIME ZONE 'UTC') <= $${paramIndex++}::timestamptz`;
+      params.push(fechaInicio, fechaFin);
+    } else if (fechaInicio) {
       sql += ` AND t.fecha_hora_inicio >= $${paramIndex++}`;
       params.push(fechaInicio);
-    }
-    
-    if (fechaFin) {
+    } else if (fechaFin) {
       sql += ` AND t.fecha_hora_inicio <= $${paramIndex++}`;
       params.push(fechaFin);
     }
-    
-    sql += ' ORDER BY t.fecha_hora_inicio DESC';
-    
+
+    sql += ` ORDER BY (t.fecha_hora_inicio AT TIME ZONE 'UTC') ASC`;
+
     const result = await query(sql, params);
     const rows = result.rows.map((r) => ({
       ...r,

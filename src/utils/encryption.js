@@ -202,6 +202,33 @@ function decryptPacienteRows(rows) {
   return rows.map(decryptPacienteRow);
 }
 
+/** Solo columnas usadas en el listado paginado (menos trabajo de descifrado por fila). */
+const PACIENTE_LIST_DECRYPT_FIELDS = [
+  'dni',
+  'nombre',
+  'apellido',
+  'telefono',
+  'whatsapp',
+  'email',
+  'obra_social',
+];
+
+function decryptPacienteListRow(row) {
+  if (!row) return row;
+  const out = { ...row };
+  for (const field of PACIENTE_LIST_DECRYPT_FIELDS) {
+    if (out[field] !== undefined && out[field] !== null) {
+      out[field] = decrypt(out[field]);
+    }
+  }
+  return out;
+}
+
+function decryptPacienteListRows(rows) {
+  if (!Array.isArray(rows)) return rows;
+  return rows.map(decryptPacienteListRow);
+}
+
 /** Campos de evoluciones_clinicas que se cifran */
 const EVOLUCION_ENCRYPT_FIELDS = ['motivo_consulta', 'diagnostico', 'tratamiento', 'observaciones'];
 
@@ -308,6 +335,8 @@ module.exports = {
   encryptPacienteRow,
   decryptPacienteRow,
   decryptPacienteRows,
+  decryptPacienteListRow,
+  decryptPacienteListRows,
   EVOLUCION_ENCRYPT_FIELDS,
   decryptEvolucionRow,
   decryptEvolucionRows,

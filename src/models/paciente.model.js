@@ -7,7 +7,12 @@
 
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
-const { encryptPacienteRow, decryptPacienteRow, decryptPacienteRows } = require('../utils/encryption');
+const {
+  encryptPacienteRow,
+  decryptPacienteRow,
+  decryptPacienteRows,
+  decryptPacienteListRows,
+} = require('../utils/encryption');
 
 /**
  * Buscar todos los pacientes con filtros opcionales
@@ -64,49 +69,97 @@ const findAllPaginated = async (filters = {}) => {
     const limitVal = Math.min(100, Math.max(1, limit));
     const offset = (Math.max(1, page) - 1) * limitVal;
     const hasQ = filters.q && String(filters.q).trim();
+    const term = hasQ ? `%${String(filters.q).trim()}%` : null;
 
-    let where = ' WHERE 1=1';
+    /** Solo columnas del listado UI + descifrado parcial (ver decryptPacienteListRows). Menos I/O que SELECT *. */
+    const selectColsList = `p.id, p.dni, p.nombre, p.apellido, p.telefono, p.whatsapp, p.email,
+        p.obra_social, p.notificaciones_activas, p.activo, p.fecha_creacion, p.fecha_actualizacion`;
+
+    /**
+     * Profesional: solo filas de paciente_profesional (JOIN), no EXISTS sobre toda la tabla pacientes.
+     * COUNT rápido: solo cuenta filas en paciente_profesional si no hay filtros extra sobre pacientes.
+     */
+    if (filters.profesionalId) {
+      const profId = filters.profesionalId;
+      const fromSql = ` FROM pacientes p
+        INNER JOIN paciente_profesional pp ON pp.paciente_id = p.id AND pp.profesional_id = $1`;
+      const params = [profId];
+      let i = 2;
+      let where = ' WHERE 1=1';
+
+      if (filters.activo !== undefined) {
+        where += ` AND p.activo = $${i++}`;
+        params.push(filters.activo);
+      }
+      if (filters.obra_social) {
+        where += ` AND p.obra_social ILIKE $${i++}`;
+        params.push(`%${filters.obra_social}%`);
+      }
+      if (hasQ) {
+        where += ` AND (p.nombre ILIKE $${i} OR p.apellido ILIKE $${i} OR p.dni ILIKE $${i})`;
+        params.push(term);
+        i += 1;
+      }
+
+      const useFastCount =
+        !hasQ && filters.activo === undefined && !filters.obra_social;
+
+      const countSql = useFastCount
+        ? 'SELECT COUNT(*)::int AS total FROM paciente_profesional WHERE profesional_id = $1'
+        : `SELECT COUNT(*)::int AS total${fromSql}${where}`;
+      const countParams = useFastCount ? [profId] : params;
+
+      const limitIdx = i;
+      const offsetIdx = i + 1;
+      const dataSql = `SELECT ${selectColsList}${fromSql}${where} ORDER BY p.fecha_creacion DESC LIMIT $${limitIdx} OFFSET $${offsetIdx}`;
+      const dataParams = [...params, limitVal, offset];
+
+      const [countResult, dataResult] = await Promise.all([
+        query(countSql, countParams),
+        query(dataSql, dataParams),
+      ]);
+
+      const total = countResult.rows[0]?.total ?? 0;
+      return { rows: decryptPacienteListRows(dataResult.rows), total };
+    }
+
+    // Administrador / secretaria: todos los pacientes (o ids acotados)
+    let fromSql = ' FROM pacientes p';
     const params = [];
-    let paramIndex = 1;
+    let i = 1;
+    let where = ' WHERE 1=1';
+
     if (filters.activo !== undefined) {
-      where += ` AND activo = $${paramIndex++}`;
+      where += ` AND p.activo = $${i++}`;
       params.push(filters.activo);
     }
     if (filters.obra_social) {
-      where += ` AND obra_social ILIKE $${paramIndex++}`;
+      where += ` AND p.obra_social ILIKE $${i++}`;
       params.push(`%${filters.obra_social}%`);
     }
-    if (filters.profesionalId) {
-      where += ` AND EXISTS (SELECT 1 FROM paciente_profesional pp WHERE pp.paciente_id = pacientes.id AND pp.profesional_id = $${paramIndex++})`;
-      params.push(filters.profesionalId);
-    } else if (filters.ids && Array.isArray(filters.ids) && filters.ids.length > 0) {
-      where += ` AND id = ANY($${paramIndex++})`;
+    if (filters.ids && Array.isArray(filters.ids) && filters.ids.length > 0) {
+      where += ` AND p.id = ANY($${i++})`;
       params.push(filters.ids);
     }
     if (hasQ) {
-      const term = `%${String(filters.q).trim()}%`;
-      where += ` AND (nombre ILIKE $${paramIndex} OR apellido ILIKE $${paramIndex} OR dni ILIKE $${paramIndex})`;
+      where += ` AND (p.nombre ILIKE $${i} OR p.apellido ILIKE $${i} OR p.dni ILIKE $${i})`;
       params.push(term);
-      paramIndex += 1;
+      i += 1;
     }
 
-    const countResult = await query(
-      `SELECT COUNT(*)::int as total FROM pacientes ${where}`,
-      params
-    );
-    const total = countResult.rows[0]?.total ?? 0;
+    const countSql = `SELECT COUNT(*)::int AS total${fromSql}${where}`;
+    const limitIdx = i;
+    const offsetIdx = i + 1;
+    const dataSql = `SELECT ${selectColsList}${fromSql}${where} ORDER BY p.fecha_creacion DESC LIMIT $${limitIdx} OFFSET $${offsetIdx}`;
     const dataParams = [...params, limitVal, offset];
-    const dataSql = `
-      SELECT id, dni, nombre, apellido, fecha_nacimiento, telefono, whatsapp, email,
-        direccion, obra_social, numero_afiliado, plan, contacto_emergencia_nombre,
-        contacto_emergencia_telefono, contacto_emergencia_nombre_2,
-        contacto_emergencia_telefono_2, notificaciones_activas, activo, fecha_creacion, fecha_actualizacion
-      FROM pacientes ${where}
-      ORDER BY fecha_creacion DESC
-      LIMIT $${paramIndex++} OFFSET $${paramIndex}
-    `;
-    const dataResult = await query(dataSql, dataParams);
-    return { rows: decryptPacienteRows(dataResult.rows), total };
+
+    const [countResult, dataResult] = await Promise.all([
+      query(countSql, params),
+      query(dataSql, dataParams),
+    ]);
+
+    const total = countResult.rows[0]?.total ?? 0;
+    return { rows: decryptPacienteListRows(dataResult.rows), total };
   } catch (error) {
     logger.error('Error en findAllPaginated pacientes:', error);
     throw error;

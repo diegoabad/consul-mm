@@ -13,6 +13,31 @@ const logger = require('../utils/logger');
 const TEMPLATES_DIR = path.join(__dirname, '..', '..', 'templates');
 
 /**
+ * Primera letra de cada palabra en mayúscula (resto en minúsculas) para nombres y apellidos en emails.
+ * @param {string|null|undefined} s
+ * @returns {string}
+ */
+const capitalizeNombrePropio = (s) => {
+  if (s == null || String(s).trim() === '') return '';
+  return String(s)
+    .trim()
+    .split(/\s+/)
+    .map((word) => {
+      if (!word) return '';
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(' ');
+};
+
+/** Nombre completo desde nombre + apellido (cada parte capitalizada). */
+const nombreCompletoPacienteOProfesional = (nombre, apellido) => {
+  const n = capitalizeNombrePropio(nombre);
+  const a = capitalizeNombrePropio(apellido);
+  const joined = [n, a].filter(Boolean).join(' ');
+  return joined;
+};
+
+/**
  * Cargar plantilla HTML y reemplazar variables {{key}}
  * @param {string} templateName - Ruta relativa a templates (ej. 'turnos/turno-asignado.html')
  * @param {Object} vars - Objeto clave-valor para reemplazar
@@ -108,14 +133,17 @@ const sendTurnoConfirmation = async (turnoData, pacienteEmail) => {
   const fechaInicio = turnoData.fecha_hora_inicio ? new Date(turnoData.fecha_hora_inicio) : null;
   const fechaStr = fechaInicio ? fechaInicio.toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
   const horaStr = fechaInicio ? fechaInicio.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
-  const pacienteNombre = [turnoData.paciente_nombre, turnoData.paciente_apellido].filter(Boolean).join(' ') || 'Paciente';
+  const pacienteNombre =
+    nombreCompletoPacienteOProfesional(turnoData.paciente_nombre, turnoData.paciente_apellido) || 'Paciente';
+  const profNombreCompleto =
+    nombreCompletoPacienteOProfesional(turnoData.profesional_nombre, turnoData.profesional_apellido) ||
+    capitalizeNombrePropio(turnoData.profesional_nombre) ||
+    'N/A';
   const html = renderTemplate('turnos/turno-asignado.html', {
     paciente_nombre: pacienteNombre,
     fecha: fechaStr,
     hora: horaStr,
-    profesional_nombre: turnoData.profesional_nombre && turnoData.profesional_apellido
-      ? `${turnoData.profesional_nombre} ${turnoData.profesional_apellido}`.trim()
-      : (turnoData.profesional_nombre || 'N/A'),
+    profesional_nombre: profNombreCompleto,
     profesional_especialidad: turnoData.profesional_especialidad || turnoData.especialidad || 'N/A',
     direccion: process.env.EMAIL_DIRECCION || 'Consultorio',
     whatsapp: process.env.EMAIL_WHATSAPP || '-',
@@ -124,7 +152,7 @@ const sendTurnoConfirmation = async (turnoData, pacienteEmail) => {
   return await sendEmail({
     to: pacienteEmail,
     subject: 'Se te asignó un nuevo turno',
-    text: `Hola ${pacienteNombre}, se te asignó un turno el ${fechaStr} a las ${horaStr}. Profesional: ${turnoData.profesional_nombre || 'N/A'}. Consultorio Cogniare.`,
+    text: `Hola ${pacienteNombre}, se te asignó un turno el ${fechaStr} a las ${horaStr}. Profesional: ${profNombreCompleto}. Consultorio Cogniare.`,
     html
   });
 };
@@ -136,6 +164,10 @@ const sendTurnoConfirmation = async (turnoData, pacienteEmail) => {
  * @returns {Promise<Object>} Información del email enviado
  */
 const sendTurnoReminder = async (turnoData, pacienteEmail) => {
+  const profReminder =
+    nombreCompletoPacienteOProfesional(turnoData.profesional_nombre, turnoData.profesional_apellido) ||
+    capitalizeNombrePropio(turnoData.profesional_nombre) ||
+    'N/A';
   const subject = 'Recordatorio de Turno';
   const text = `
     Hola,
@@ -143,7 +175,7 @@ const sendTurnoReminder = async (turnoData, pacienteEmail) => {
     Te recordamos que tienes un turno:
     
     Fecha: ${turnoData.fecha_hora}
-    Profesional: ${turnoData.profesional_nombre || 'N/A'}
+    Profesional: ${profReminder}
     
     Te esperamos.
     
@@ -168,9 +200,10 @@ const sendTurnoReminder = async (turnoData, pacienteEmail) => {
 const sendTurnoCancellation = async (turnoData, pacienteEmail, motivo) => {
   const fechaInicio = turnoData.fecha_hora_inicio ? new Date(turnoData.fecha_hora_inicio) : null;
   const fechaStr = fechaInicio ? fechaInicio.toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
-  const profNombre = turnoData.profesional_nombre && turnoData.profesional_apellido
-    ? `${turnoData.profesional_nombre} ${turnoData.profesional_apellido}`.trim()
-    : (turnoData.profesional_nombre || 'N/A');
+  const profNombre =
+    nombreCompletoPacienteOProfesional(turnoData.profesional_nombre, turnoData.profesional_apellido) ||
+    capitalizeNombrePropio(turnoData.profesional_nombre) ||
+    'N/A';
   const subject = 'Cancelación de Turno';
   const text = `
     Hola,
@@ -200,7 +233,7 @@ const sendTurnoCancellation = async (turnoData, pacienteEmail, motivo) => {
  * @returns {Promise<Object>} Información del email enviado
  */
 const sendWelcomeEmail = async (usuarioData, email) => {
-  const nombre = [usuarioData.nombre, usuarioData.apellido].filter(Boolean).join(' ') || 'Usuario';
+  const nombre = nombreCompletoPacienteOProfesional(usuarioData.nombre, usuarioData.apellido) || 'Usuario';
   const loginUrl = process.env.LOGIN_URL || process.env.CORS_ORIGIN || 'https://localhost:5173';
   const html = renderTemplate('usuarios/usuario-creado.html', {
     LOGO_URL: process.env.LOGO_URL || 'https://placehold.co/200x50/059669/ffffff?text=Consultorio+Cogniare',
