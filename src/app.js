@@ -25,12 +25,16 @@ app.set('trust proxy', 1);
 // No pongas express.json() ni router antes de esto: el preflight OPTIONS debe
 // recibir cabeceras CORS sin pasar por parsers ni rutas que no existan para OPTIONS.
 //
-// Orígenes: CORS_ORIGIN o ALLOWED_ORIGINS (mismo formato, coma-separados).
-// En Render: CORS_ORIGIN=https://tu-app.netlify.app,http://localhost:5173
-// CORS_NETLIFY_PREVIEWS=true → también permite https://*.netlify.app
+// Orígenes: CORS_ORIGIN o ALLOWED_ORIGINS (coma-separados, sin barra final).
+// CORS_NETLIFY_PREVIEWS=true → también https://*.netlify.app
+// CORS_ALLOW_LOCALHOST=true → añade localhost:5173 / :3000 (front local contra API en Render)
 //
-// Importante: usar array o true en `origin`, no un callback que haga cb(null, false)
-// al denegar: en cors@2 eso hace next() y el OPTIONS cae en 404 sin cabeceras CORS.
+// CORS_TEST_MODE=true → no aplica lista de orígenes: permite cualquier Origin (solo pruebas / debug).
+// En producción real dejá false o sin definir y usá CORS_ORIGIN.
+//
+// Importante: array en `origin`, no callback con cb(null, false) (evita 404 en OPTIONS).
+const corsTestMode = process.env.CORS_TEST_MODE === 'true';
+
 const originsRaw = process.env.CORS_ORIGIN || process.env.ALLOWED_ORIGINS || '';
 const corsOrigins = originsRaw
   .split(',')
@@ -38,12 +42,37 @@ const corsOrigins = originsRaw
   .filter(Boolean);
 
 const netlifyOriginRegex = /^https:\/\/[a-zA-Z0-9-]+\.netlify\.app$/;
-const corsOriginValue =
-  corsOrigins.length === 0
-    ? true
-    : process.env.CORS_NETLIFY_PREVIEWS === 'true'
+const localhostOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:3000',
+];
+
+let corsOriginValue;
+if (corsTestMode) {
+  corsOriginValue = true;
+} else if (corsOrigins.length === 0) {
+  corsOriginValue = true;
+} else {
+  const withNetlify =
+    process.env.CORS_NETLIFY_PREVIEWS === 'true'
       ? [...corsOrigins, netlifyOriginRegex]
-      : corsOrigins;
+      : [...corsOrigins];
+  if (process.env.CORS_ALLOW_LOCALHOST === 'true') {
+    const strings = withNetlify.filter((x) => typeof x === 'string');
+    const regexes = withNetlify.filter((x) => x instanceof RegExp);
+    corsOriginValue = [...new Set([...strings, ...localhostOrigins]), ...regexes];
+  } else {
+    corsOriginValue = withNetlify;
+  }
+}
+
+if (corsTestMode) {
+  logger.warn(
+    'CORS_TEST_MODE=true: se acepta cualquier origen. No usar en producción con datos sensibles.'
+  );
+}
 
 const corsOptions = {
   origin: corsOriginValue,
