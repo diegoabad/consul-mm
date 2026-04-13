@@ -12,6 +12,7 @@ const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
 const routes = require('./routes/index');
+const authRoutes = require('./routes/auth.routes');
 const errorHandler = require('./middlewares/errorHandler.middleware');
 const logger = require('./utils/logger');
 
@@ -92,6 +93,7 @@ const limiter = rateLimit({
   skip: (req) => req.method === 'OPTIONS',
 });
 app.use('/api/', limiter);
+app.use('/auth/', limiter);
 
 // Parse JSON y URL encoded
 app.use(express.json({ limit: '10mb' }));
@@ -100,6 +102,10 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Servir archivos estáticos desde /uploads
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 app.use('/public', express.static(path.join(__dirname, '../public')));
+
+// Mismo router de auth en /auth/* (sin /api) por si VITE_API_URL quedó sin el prefijo /api.
+// Canónico: /api/auth/login — preferible arreglar la variable de entorno.
+app.use('/auth', authRoutes);
 
 // Rutas
 app.use('/api', routes);
