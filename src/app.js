@@ -21,20 +21,23 @@ const app = express();
 // para que express-rate-limit identifique correctamente la IP del cliente (X-Forwarded-For)
 app.set('trust proxy', 1);
 
-// Middlewares de seguridad (Helmet permite cross-origin para API consumida por SPA en otro dominio)
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: 'cross-origin' }
-}));
-
-// CORS: permitir frontend en Netlify y localhost. En Render definir CORS_ORIGIN (orígenes separados por coma).
-// Importante: usar array en `origin` (no función callback). Si usás callback y devolvés "denegado",
-// el paquete cors llama a next() y el OPTIONS cae en 404 (preflight falla en el navegador).
+// CORS primero (antes de Helmet): asegura cabeceras en preflight y respuestas de error.
+// CORS_ORIGIN: orígenes exactos separados por coma, ej. https://tu-app.netlify.app,http://localhost:5173
+// CORS_NETLIFY_PREVIEWS=true: además permite cualquier https://*.netlify.app (deploy previews).
 const corsOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim()).filter(Boolean)
   : [];
 
+const netlifyOriginRegex = /^https:\/\/[a-zA-Z0-9-]+\.netlify\.app$/;
+const corsOriginValue =
+  corsOrigins.length === 0
+    ? true
+    : process.env.CORS_NETLIFY_PREVIEWS === 'true'
+      ? [...corsOrigins, netlifyOriginRegex]
+      : corsOrigins;
+
 const corsOptions = {
-  origin: corsOrigins.length > 0 ? corsOrigins : true,
+  origin: corsOriginValue,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
@@ -42,8 +45,29 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-// Refuerzo explícito del preflight (algunos proxies / orden de middlewares).
 app.options('*', cors(corsOptions));
+
+// Middlewares de seguridad (Helmet permite cross-origin para API consumida por SPA en otro dominio)
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' }
+}));
+
+// Diagnóstico en Render: health en la raíz (si /api/* da 404, el Root Directory o el start no apuntan a esta API)
+app.get('/', (_req, res) => {
+  res.json({
+    ok: true,
+    service: 'consultorio-medico-api',
+    health: '/api/health',
+    hint: 'Si ves esto pero /api/health da 404, revisá en Render Root Directory=api y Start Command: npm start',
+  });
+});
+app.get('/health', (_req, res) => {
+  res.json({
+    ok: true,
+    service: 'consultorio-medico-api',
+    message: 'Usá GET /api/health para estado de migraciones',
+  });
+});
 
 // Logger HTTP
 app.use(morgan('combined', {
