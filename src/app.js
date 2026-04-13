@@ -49,12 +49,17 @@ const corsOrigins = originsRaw
   .map((s) => normalizeCorsOrigin(s))
   .filter(Boolean);
 
-// Deploy previews (https://abc123--sitio.netlify.app) y producción (*.netlify.app)
+// Deploy previews (https://abc123--sitio.netlify.app) y cualquier sitio *.netlify.app
 const netlifyOriginRegex = /^https:\/\/.+\.netlify\.app$/i;
 
+// Si definís CORS_ORIGIN (p. ej. solo dominio custom), igual convive el front en *.netlify.app.
+// Por defecto se añade este patrón si hay lista de orígenes; desactivar: CORS_NETLIFY_PREVIEWS=false
 const includeNetlifyWildcard =
-  process.env.CORS_NETLIFY_PREVIEWS === 'true' ||
-  corsOrigins.some((o) => /\.netlify\.app$/i.test(o));
+  process.env.CORS_NETLIFY_PREVIEWS === 'false'
+    ? false
+    : process.env.CORS_NETLIFY_PREVIEWS === 'true' ||
+      corsOrigins.some((o) => /\.netlify\.app$/i.test(o)) ||
+      corsOrigins.length > 0;
 
 const localhostOrigins = [
   'http://localhost:5173',
@@ -81,7 +86,7 @@ if (corsTestMode) {
 
 if (!corsTestMode && corsOrigins.length > 0) {
   logger.info(
-    `CORS: ${corsOrigins.length} origen(es) explícitos${includeNetlifyWildcard ? ' + *.netlify.app (deploy previews)' : ''}. Dominio custom en Netlify: agregalo a CORS_ORIGIN (el Origin no es *.netlify.app).`
+    `CORS: ${corsOrigins.length} origen(es) explícitos${includeNetlifyWildcard ? ' + https://*.netlify.app' : ''}. Solo dominio custom: incluilo en CORS_ORIGIN. Para bloquear Netlify: CORS_NETLIFY_PREVIEWS=false.`
   );
 }
 
