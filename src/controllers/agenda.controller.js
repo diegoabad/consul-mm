@@ -374,15 +374,15 @@ const getBloquesByProfesional = async (req, res, next) => {
     
     const profesional = await profesionalModel.findById(id);
     if (!profesional) {
-      return res.status(404).json(buildResponse(false, null, 'Profesional no encontrado'));
+      return res.json(buildResponse(true, [], 'Profesional no encontrado; sin bloques'));
     }
-    
+
     const bloques = await bloqueModel.findByProfesional(
       id,
       fecha_inicio || null,
       fecha_fin || null
     );
-    
+
     res.json(buildResponse(true, bloques, 'Bloques no disponibles del profesional obtenidos exitosamente'));
   } catch (error) {
     logger.error('Error en getBloquesByProfesional:', error);
@@ -546,7 +546,7 @@ const getExcepcionesByProfesional = async (req, res, next) => {
     const { fecha_desde, fecha_hasta } = req.query;
     const profesional = await profesionalModel.findById(id);
     if (!profesional) {
-      return res.status(404).json(buildResponse(false, null, 'Profesional no encontrado'));
+      return res.json(buildResponse(true, [], 'Profesional no encontrado; sin excepciones'));
     }
     let excepciones;
     if (fecha_desde && fecha_hasta) {
