@@ -137,10 +137,10 @@ async function enviarMensajePlantilla(to, contentSid, variables) {
  * - Si TWILIO_CONTENT_SID_RECORDATORIO está configurado → plantilla Content (ver TWILIO_RECORDATORIO_VARS).
  * - Si no → texto plano con links si hay API_PUBLIC_URL.
  *
- * TWILIO_RECORDATORIO_VARS=3 (default si no está definido):
- *   {{1}} día, {{2}} hora, {{3}} profesional (+ especialidad en el mismo texto).
- * TWILIO_RECORDATORIO_VARS=5 (plantilla CTA con /turno/{{5}}/confirmar|cancelar):
- *   {{1}} paciente, {{2}} profesional, {{3}} especialidad (sin vacío), {{4}} fecha y hora, {{5}} UUID del turno.
+ * TWILIO_RECORDATORIO_VARS=3 (plantillas solo con 3 placeholders en el cuerpo):
+ *   {{1}} día, {{2}} hora, {{3}} profesional (+ especialidad).
+ * TWILIO_RECORDATORIO_VARS=5 (plantilla CTA; botones con /turno/{{5}}/…):
+ *   {{1}} nombre paciente, {{2}} nombre profesional, {{3}} especialidad, {{4}} fecha y hora, {{5}} UUID del turno.
  *
  * @param {Object} turno
  */
@@ -191,9 +191,9 @@ async function enviarRecordatorioTurno(turno) {
 
   if (contentSid) {
     if (recordatorioVars === '5') {
-      const esp = especialidad.trim() || 'Consulta';
-      const prof = nombreProfesional.trim() || 'Profesional';
       const pac = nombrePaciente.trim() || 'Paciente';
+      const prof = nombreProfesional.trim() || 'Profesional';
+      const esp = especialidad.trim() || 'Consulta';
       const fechaTxt = fecha.trim() || '-';
       return enviarMensajePlantilla(telefono, contentSid, {
         '1': pac,
