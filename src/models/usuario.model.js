@@ -51,32 +51,45 @@ const findAllPaginated = async (filters = {}) => {
     let paramIndex = 1;
 
     if (filters.rol) {
-      where += ` AND rol = $${paramIndex++}`;
+      where += ` AND u.rol = $${paramIndex++}`;
       params.push(filters.rol);
     }
     if (filters.activo !== undefined) {
-      where += ` AND activo = $${paramIndex++}`;
+      where += ` AND u.activo = $${paramIndex++}`;
       params.push(filters.activo);
     }
     if (filters.q && String(filters.q).trim()) {
       const term = `%${String(filters.q).trim()}%`;
-      where += ` AND (nombre ILIKE $${paramIndex} OR apellido ILIKE $${paramIndex} OR email ILIKE $${paramIndex})`;
+      where += ` AND (u.nombre ILIKE $${paramIndex} OR u.apellido ILIKE $${paramIndex} OR u.email ILIKE $${paramIndex})`;
       params.push(term);
       paramIndex += 1;
     }
 
     const countResult = await query(
-      'SELECT COUNT(*)::int as total FROM usuarios ' + where,
+      'SELECT COUNT(*)::int as total FROM usuarios u ' + where,
       params
     );
     const total = countResult.rows[0]?.total ?? 0;
 
     const dataParams = [...params, limitVal, offset];
     const dataSql = `
-      SELECT id, email, nombre, apellido, telefono, rol, activo, fecha_creacion, fecha_actualizacion
-      FROM usuarios ${where}
-      ORDER BY fecha_creacion DESC
-      LIMIT $${paramIndex++} OFFSET $${paramIndex}
+      SELECT
+        u.id,
+        u.email,
+        u.nombre,
+        u.apellido,
+        u.telefono,
+        u.rol,
+        u.activo,
+        u.fecha_creacion,
+        u.fecha_actualizacion,
+        p.id AS profesional_id,
+        p.recordatorio_whatsapp_permitido_admin
+      FROM usuarios u
+      LEFT JOIN profesionales p ON p.usuario_id = u.id
+      ${where.replace(/^ WHERE/, ' WHERE')}
+      ORDER BY u.fecha_creacion DESC
+      LIMIT $${paramIndex++} OFFSET $${paramIndex++}
     `;
     const dataResult = await query(dataSql, dataParams);
     return { rows: dataResult.rows, total };

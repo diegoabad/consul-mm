@@ -39,7 +39,9 @@ const updateProfesionalSchema = Joi.object({
   fecha_inicio_contrato: Joi.date().iso().optional().allow(null),
   monto_mensual: Joi.number().positive().optional().allow(null),
   tipo_periodo_pago: Joi.string().valid(...TIPO_PERIODO_PAGO).optional().allow(null, ''),
-  observaciones: Joi.string().optional().allow(null, '')
+  observaciones: Joi.string().optional().allow(null, ''),
+  recordatorio_whatsapp_permitido_admin: Joi.boolean().optional(),
+  recordatorio_activo: Joi.boolean().optional(),
 });
 
 const blockProfesionalSchema = Joi.object({

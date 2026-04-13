@@ -198,6 +198,15 @@ async function enviarManual(req, res) {
 
     const resultado = await enviarRecordatorioTurno(turno);
     if (!resultado) {
+      if (turno.recordatorio_whatsapp_permitido_admin === false) {
+        return res.status(422).json(
+          buildResponse(
+            false,
+            null,
+            'No se pudo enviar: el administrador deshabilitó los recordatorios WhatsApp para este profesional'
+          )
+        );
+      }
       if (turno.recordatorio_activo === false) {
         return res.status(422).json(
           buildResponse(false, null, 'No se pudo enviar: el profesional tiene los recordatorios WhatsApp desactivados')

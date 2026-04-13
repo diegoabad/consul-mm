@@ -639,6 +639,7 @@ const findParaRecordatorio = async () => {
       INNER JOIN pacientes pac ON t.paciente_id = pac.id
       WHERE t.deleted_at IS NULL
         AND p.recordatorio_activo = true
+        AND p.recordatorio_whatsapp_permitido_admin = true
         AND t.recordatorio_enviado = false
         AND t.recordatorio_intentos < 3
         AND t.estado IN ('pendiente', 'confirmado')
@@ -671,6 +672,7 @@ const findParaRecordatorioById = async (id) => {
         t.estado, t.motivo,
         p.especialidad as profesional_especialidad,
         p.recordatorio_activo, p.recordatorio_horas_antes,
+        p.recordatorio_whatsapp_permitido_admin,
         u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido,
         pac.nombre as paciente_nombre, pac.apellido as paciente_apellido,
         pac.telefono as paciente_telefono, pac.whatsapp as paciente_whatsapp,

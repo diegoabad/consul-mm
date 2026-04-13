@@ -53,6 +53,7 @@ const MIGRATIONS_ORDER = [
   '035_drop_pacientes_search_columns.sql',
   '036_listados_performance_indexes.sql',
   '037_consultas_turnos_agenda_indexes.sql',
+  '038_profesionales_recordatorio_whatsapp_permitido_admin.sql',
 ];
 
 const SALT_ROUNDS = 10;

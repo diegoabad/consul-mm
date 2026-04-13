@@ -21,6 +21,7 @@ const findAll = async (filters = {}) => {
         p.estado_pago, p.bloqueado, p.razon_bloqueo, 
         p.fecha_ultimo_pago, p.fecha_inicio_contrato, p.monto_mensual, p.tipo_periodo_pago, p.observaciones,
         p.recordatorio_activo, p.recordatorio_horas_antes,
+        p.recordatorio_whatsapp_permitido_admin,
         p.fecha_creacion, p.fecha_actualizacion,
         u.email, u.nombre, u.apellido, u.telefono, u.rol, u.activo as usuario_activo
       FROM profesionales p
@@ -119,6 +120,7 @@ const findAllPaginated = async (filters = {}) => {
         p.estado_pago, p.bloqueado, p.razon_bloqueo,
         p.fecha_ultimo_pago, p.fecha_inicio_contrato, p.monto_mensual, p.tipo_periodo_pago, p.observaciones,
         p.recordatorio_activo, p.recordatorio_horas_antes,
+        p.recordatorio_whatsapp_permitido_admin,
         p.fecha_creacion, p.fecha_actualizacion,
         u.email, u.nombre, u.apellido, u.telefono, u.rol, u.activo AS usuario_activo
       ${fromClause}
@@ -146,6 +148,7 @@ const findById = async (id) => {
         p.estado_pago, p.bloqueado, p.razon_bloqueo, 
         p.fecha_ultimo_pago, p.fecha_inicio_contrato, p.monto_mensual, p.tipo_periodo_pago, p.observaciones,
         p.recordatorio_activo, p.recordatorio_horas_antes,
+        p.recordatorio_whatsapp_permitido_admin,
         p.fecha_creacion, p.fecha_actualizacion,
         u.email, u.nombre, u.apellido, u.telefono, u.rol, u.activo as usuario_activo
       FROM profesionales p
@@ -173,6 +176,7 @@ const findByUserId = async (usuarioId) => {
         p.estado_pago, p.bloqueado, p.razon_bloqueo, 
         p.fecha_ultimo_pago, p.fecha_inicio_contrato, p.monto_mensual, p.tipo_periodo_pago, p.observaciones,
         p.recordatorio_activo, p.recordatorio_horas_antes,
+        p.recordatorio_whatsapp_permitido_admin,
         p.fecha_creacion, p.fecha_actualizacion,
         u.email, u.nombre, u.apellido, u.telefono, u.rol, u.activo as usuario_activo
       FROM profesionales p
@@ -246,7 +250,9 @@ const update = async (id, profesionalData) => {
     
     const allowedFields = [
       'matricula', 'especialidad', 'estado_pago', 'bloqueado',
-      'razon_bloqueo', 'fecha_ultimo_pago', 'fecha_inicio_contrato', 'monto_mensual', 'tipo_periodo_pago', 'observaciones'
+      'razon_bloqueo', 'fecha_ultimo_pago', 'fecha_inicio_contrato', 'monto_mensual', 'tipo_periodo_pago', 'observaciones',
+      'recordatorio_whatsapp_permitido_admin',
+      'recordatorio_activo',
     ];
     
     for (const field of allowedFields) {
@@ -269,7 +275,8 @@ const update = async (id, profesionalData) => {
       WHERE id = $${paramIndex}
       RETURNING id, usuario_id, matricula, especialidad, estado_pago, 
                 bloqueado, razon_bloqueo, fecha_ultimo_pago, fecha_inicio_contrato, monto_mensual, tipo_periodo_pago,
-                observaciones, fecha_creacion, fecha_actualizacion
+                observaciones, recordatorio_activo, recordatorio_horas_antes, recordatorio_whatsapp_permitido_admin,
+                fecha_creacion, fecha_actualizacion
     `;
     
     const result = await query(sql, params);

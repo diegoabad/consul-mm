@@ -158,6 +158,11 @@ function titleCase(str) {
 }
 
 async function enviarRecordatorioTurno(turno) {
+  if (turno.recordatorio_whatsapp_permitido_admin === false) {
+    logger.warn(`Recordatorio omitido (WhatsApp deshabilitado por administrador para el profesional) para turno ${turno.id}`);
+    return null;
+  }
+
   // 1. Verificar que el profesional tenga los recordatorios activos
   if (turno.recordatorio_activo === false) {
     logger.warn(`Recordatorio omitido (recordatorios desactivados por el profesional) para turno ${turno.id}`);

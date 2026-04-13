@@ -11,6 +11,9 @@ const logger = require('../utils/logger');
 const { buildResponse, normalizeToLowerCase } = require('../utils/helpers');
 const { ROLES } = require('../utils/constants');
 
+const MSG_RECORDATORIO_BLOQUEADO_ADMIN =
+  'Los recordatorios WhatsApp fueron deshabilitados por el administrador. Contactá al administrador para habilitarlos.';
+
 /**
  * Normaliza fecha_inicio_contrato a string YYYY-MM-DD en UTC para guardar en columna DATE
  * sin desfase por zona horaria (evita que "2026-02-01" se guarde como 31/1 en zonas UTC-x).
@@ -233,6 +236,15 @@ const update = async (req, res, next) => {
     if (updateData.especialidad != null && updateData.especialidad !== '') updateData.especialidad = normalizeToLowerCase(updateData.especialidad);
     if (updateData.razon_bloqueo != null && updateData.razon_bloqueo !== '') updateData.razon_bloqueo = normalizeToLowerCase(updateData.razon_bloqueo);
     if (updateData.observaciones != null && updateData.observaciones !== '') updateData.observaciones = normalizeToLowerCase(updateData.observaciones);
+
+    const usuarioRol = req.user?.rol;
+    if (usuarioRol !== ROLES.ADMINISTRADOR) {
+      delete updateData.recordatorio_whatsapp_permitido_admin;
+      delete updateData.recordatorio_activo;
+    } else if (updateData.recordatorio_whatsapp_permitido_admin === false) {
+      updateData.recordatorio_activo = false;
+    }
+
     const profesionalActualizado = await profesionalModel.update(id, updateData);
     
     logger.info('Profesional actualizado:', { id, cambios: updateData });
@@ -362,6 +374,7 @@ const getRecordatorioConfig = async (req, res, next) => {
     const config = {
       recordatorio_activo: profesional.recordatorio_activo ?? false,
       recordatorio_horas_antes: profesional.recordatorio_horas_antes ?? 24,
+      recordatorio_whatsapp_permitido_admin: profesional.recordatorio_whatsapp_permitido_admin !== false,
     };
     res.json(buildResponse(true, config, 'Configuración de recordatorio obtenida'));
   } catch (error) {
@@ -398,11 +411,27 @@ const updateRecordatorioConfig = async (req, res, next) => {
       return res.status(403).json(buildResponse(false, null, 'No tenés permiso para modificar este profesional'));
     }
 
-    const updated = await profesionalModel.updateRecordatorioConfig(id, {
+    const permitidoPorAdmin = profesional.recordatorio_whatsapp_permitido_admin !== false;
+    if (!permitidoPorAdmin && usuarioRol !== ROLES.ADMINISTRADOR) {
+      return res.status(403).json(buildResponse(false, null, MSG_RECORDATORIO_BLOQUEADO_ADMIN));
+    }
+
+    await profesionalModel.updateRecordatorioConfig(id, {
       recordatorio_activo,
       recordatorio_horas_antes: horas,
     });
-    res.json(buildResponse(true, updated, 'Configuración de recordatorio actualizada'));
+    const fresh = await profesionalModel.findById(id);
+    res.json(
+      buildResponse(
+        true,
+        {
+          recordatorio_activo: fresh.recordatorio_activo ?? false,
+          recordatorio_horas_antes: fresh.recordatorio_horas_antes ?? 24,
+          recordatorio_whatsapp_permitido_admin: fresh.recordatorio_whatsapp_permitido_admin !== false,
+        },
+        'Configuración de recordatorio actualizada'
+      )
+    );
   } catch (error) {
     logger.error('Error en updateRecordatorioConfig:', error);
     next(error);
