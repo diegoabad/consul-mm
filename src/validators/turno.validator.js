@@ -121,8 +121,6 @@ const createRecurrenciaSchema = Joi.object({
   paciente_id: Joi.string().uuid().required(),
   motivo: Joi.string().optional().allow(null, ''),
   permiso_fuera_agenda: Joi.boolean().optional(),
-  /** Token devuelto por POST /turnos/slots/validar-batch cuando todos los slots ok; evita revalidar en este paso */
-  validacion_token: Joi.string().optional().allow(null, ''),
   serie: Joi.object({
     frecuencia: Joi.string().valid('semanal', 'quincenal', 'mensual').required(),
     mensual_modo: Joi.string().valid('nth_weekday', 'dia_calendario').allow(null).optional(),
@@ -138,20 +136,6 @@ const deleteTurnoQuerySchema = Joi.object({
   alcance: Joi.string().valid('solo_este', 'desde_aqui_en_adelante').optional()
 });
 
-const slotIntervaloBatchSchema = Joi.object({
-  fecha_hora_inicio: Joi.date().iso().required(),
-  fecha_hora_fin: Joi.date().iso().required().greater(Joi.ref('fecha_hora_inicio')),
-  permiso_fuera_agenda: Joi.boolean().optional()
-});
-
-/** Máximo alineado con RECURRENCIA_MAX_OCURRENCIAS (52 por defecto) */
-const validarSlotsBatchSchema = Joi.object({
-  profesional_id: Joi.string().uuid().required(),
-  paciente_id: Joi.string().uuid().required(),
-  permiso_fuera_agenda: Joi.boolean().optional(),
-  slots: Joi.array().items(slotIntervaloBatchSchema).min(1).max(52).required()
-});
-
 module.exports = {
   createTurnoSchema,
   updateTurnoSchema,
@@ -161,6 +145,5 @@ module.exports = {
   availabilitySchema,
   previewRecurrenciaSchema,
   createRecurrenciaSchema,
-  deleteTurnoQuerySchema,
-  validarSlotsBatchSchema
+  deleteTurnoQuerySchema
 };

@@ -19,8 +19,7 @@ const {
   availabilitySchema,
   previewRecurrenciaSchema,
   createRecurrenciaSchema,
-  deleteTurnoQuerySchema,
-  validarSlotsBatchSchema
+  deleteTurnoQuerySchema
 } = require('../validators/turno.validator');
 
 // GET / - Listar turnos
@@ -95,15 +94,6 @@ router.post(
   requirePermission('turnos.crear'),
   validateBody(createRecurrenciaSchema),
   turnosController.createRecurrencia
-);
-
-// POST /slots/validar-batch — validar varios intervalos en una petición (mismo profesional/paciente)
-router.post(
-  '/slots/validar-batch',
-  authenticate,
-  requirePermission('turnos.crear'),
-  validateBody(validarSlotsBatchSchema),
-  turnosController.validarSlotsBatch
 );
 
 // PUT /:id - Actualizar turno
