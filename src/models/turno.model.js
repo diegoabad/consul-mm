@@ -384,6 +384,29 @@ const hasPacienteOverlap = async (profesionalId, pacienteId, fechaHoraInicio, fe
 };
 
 /**
+ * Turnos activos del profesional que podrían solapar cualquier intervalo dentro de [minInicio, maxFin].
+ * Superset seguro para validar muchos slots en una sola lectura (luego se filtra en memoria).
+ */
+const findActiveInWindowForProfesional = async (profesionalId, minInicio, maxFin) => {
+  try {
+    const result = await query(
+      `SELECT id, paciente_id, fecha_hora_inicio, fecha_hora_fin, estado
+       FROM turnos
+       WHERE profesional_id = $1
+         AND deleted_at IS NULL
+         AND estado NOT IN ($2, $3)
+         AND (fecha_hora_inicio AT TIME ZONE 'UTC') < $4::timestamptz
+         AND (fecha_hora_fin AT TIME ZONE 'UTC') > $5::timestamptz`,
+      [profesionalId, ESTADOS_TURNO.CANCELADO, ESTADOS_TURNO.COMPLETADO, maxFin, minInicio]
+    );
+    return result.rows;
+  } catch (error) {
+    logger.error('Error en findActiveInWindowForProfesional turno:', error);
+    throw error;
+  }
+};
+
+/**
  * Crear nuevo turno
  * @param {Object} turnoData - Datos del turno
  * @returns {Promise<Object>} Turno creado
@@ -928,6 +951,7 @@ module.exports = {
   findByPaciente,
   checkAvailability,
   hasPacienteOverlap,
+  findActiveInWindowForProfesional,
   create,
   update,
   cancel,

@@ -785,7 +785,14 @@ const createRecurrencia = async (req, res, next) => {
 
     const creados = await turnoModel.createManyWithClient(client, rowsToInsert);
 
+    const idsOrden = creados.map((t) => t.id);
+    // Misma conexión/transacción: evita un round-trip extra al pool y libera el cliente
+    // en cuanto hace COMMIT (antes la conexión quedaba tomada hasta el final del handler).
+    const turnosCompletos = await turnoModel.findByIdsInOrder(idsOrden, client);
+
     await client.query('COMMIT');
+    client.release();
+    client = null;
 
     try {
       await pacienteProfesionalModel.create({
@@ -796,9 +803,6 @@ const createRecurrencia = async (req, res, next) => {
     } catch (err) {
       logger.error('Error auto-asignando profesional al paciente (serie):', err);
     }
-
-    const idsOrden = creados.map((t) => t.id);
-    const turnosCompletos = await turnoModel.findByIdsInOrder(idsOrden);
 
     if (turnosCompletos.length && turnosCompletos[0].paciente_email) {
       emailService

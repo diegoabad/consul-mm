@@ -193,21 +193,26 @@ function timeToMinutes(timeStr) {
  * @param {Date} fechaHora - Fecha y hora de inicio del turno
  * @returns {Promise<boolean>} true si hay al menos una excepción para ese día y esa hora dentro del rango
  */
+/** Excepciones ya filtradas al día de fechaHora (misma lógica que coversDateTime, sin BD). */
+const coversDateTimeWithExcepcionesDelDia = (excepcionesDelDia, fechaHora) => {
+  if (!excepcionesDelDia?.length) return false;
+  const minutos = fechaHora.getHours() * 60 + fechaHora.getMinutes();
+  for (const ex of excepcionesDelDia) {
+    const inicioMin = timeToMinutes(ex.hora_inicio);
+    const finMin = timeToMinutes(ex.hora_fin);
+    if (minutos >= inicioMin && minutos < finMin) return true;
+  }
+  return false;
+};
+
 const coversDateTime = async (profesionalId, fechaHora) => {
   try {
     const year = fechaHora.getFullYear();
     const month = String(fechaHora.getMonth() + 1).padStart(2, '0');
     const day = String(fechaHora.getDate()).padStart(2, '0');
     const fechaStr = `${year}-${month}-${day}`;
-    const minutos = fechaHora.getHours() * 60 + fechaHora.getMinutes();
-
     const excepciones = await findByProfesionalAndDateRange(profesionalId, fechaStr, fechaStr);
-    for (const ex of excepciones) {
-      const inicioMin = timeToMinutes(ex.hora_inicio);
-      const finMin = timeToMinutes(ex.hora_fin);
-      if (minutos >= inicioMin && minutos < finMin) return true;
-    }
-    return false;
+    return coversDateTimeWithExcepcionesDelDia(excepciones, fechaHora);
   } catch (error) {
     logger.error('Error en coversDateTime excepciones_agenda:', error);
     throw error;
@@ -221,5 +226,6 @@ module.exports = {
   create,
   update,
   delete: deleteById,
-  coversDateTime
+  coversDateTime,
+  coversDateTimeWithExcepcionesDelDia
 };

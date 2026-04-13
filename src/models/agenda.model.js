@@ -198,31 +198,36 @@ function timeToMinutes(timeStr) {
  * @param {Date} fechaHora - Fecha y hora de inicio del turno
  * @returns {Promise<boolean>} true si hay al menos una config vigente para ese día y esa hora dentro del rango
  */
+/**
+ * Misma lógica que vigentConfigCoversDateTime pero sin consultar BD (batch de validación).
+ * @param {Array} configs - Resultado de findByProfesional(profId, true, false)
+ */
+const coversDateTimeWithConfigs = (configs, fechaHora) => {
+  const diaSemana = fechaHora.getDay();
+  const minutos = fechaHora.getHours() * 60 + fechaHora.getMinutes();
+  const fechaStr = toDateOnly(fechaHora);
+
+  for (const c of configs) {
+    const diaC = Number(c.dia_semana);
+    if (diaC !== diaSemana) continue;
+    if (diaC === 7) continue;
+
+    const desdeStr = toDateOnly(c.vigencia_desde);
+    const hastaStr = c.vigencia_hasta != null ? toDateOnly(c.vigencia_hasta) : null;
+    if (desdeStr && fechaStr < desdeStr) continue;
+    if (hastaStr && fechaStr > hastaStr) continue;
+
+    const inicioMin = timeToMinutes(c.hora_inicio);
+    const finMin = timeToMinutes(c.hora_fin);
+    if (minutos >= inicioMin && minutos < finMin) return true;
+  }
+  return false;
+};
+
 const vigentConfigCoversDateTime = async (profesionalId, fechaHora) => {
   try {
-    // vigente=false para obtener todas las configs (incl. pasadas) y filtrar por la fecha del turno
     const configs = await findByProfesional(profesionalId, true, false);
-    const diaSemana = fechaHora.getDay();
-    const minutos = fechaHora.getHours() * 60 + fechaHora.getMinutes();
-    const fechaStr = toDateOnly(fechaHora);
-
-    for (const c of configs) {
-      const diaC = Number(c.dia_semana);
-      if (diaC !== diaSemana) continue;
-      // dia_semana 7 = "sin días fijos": placeholder con hora_inicio/hora_fin 00:00; no genera slots semanales
-      if (diaC === 7) continue;
-
-      // La fecha del turno debe estar dentro del rango de vigencia de esta configuración
-      const desdeStr = toDateOnly(c.vigencia_desde);
-      const hastaStr = c.vigencia_hasta != null ? toDateOnly(c.vigencia_hasta) : null;
-      if (desdeStr && fechaStr < desdeStr) continue;
-      if (hastaStr && fechaStr > hastaStr) continue;
-
-      const inicioMin = timeToMinutes(c.hora_inicio);
-      const finMin = timeToMinutes(c.hora_fin);
-      if (minutos >= inicioMin && minutos < finMin) return true;
-    }
-    return false;
+    return coversDateTimeWithConfigs(configs, fechaHora);
   } catch (error) {
     logger.error('Error en vigentConfigCoversDateTime:', error);
     throw error;
@@ -573,6 +578,7 @@ module.exports = {
   findByProfesional,
   checkDuplicate,
   vigentConfigCoversDateTime,
+  coversDateTimeWithConfigs,
   create,
   update,
   delete: deleteAgenda,
