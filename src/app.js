@@ -27,21 +27,23 @@ app.use(helmet({
 }));
 
 // CORS: permitir frontend en Netlify y localhost. En Render definir CORS_ORIGIN (orígenes separados por coma).
+// Importante: usar array en `origin` (no función callback). Si usás callback y devolvés "denegado",
+// el paquete cors llama a next() y el OPTIONS cae en 404 (preflight falla en el navegador).
 const corsOrigins = process.env.CORS_ORIGIN
-  ? process.env.CORS_ORIGIN.split(',').map(s => s.trim()).filter(Boolean)
-  : null;
-app.use(cors({
-  origin: corsOrigins && corsOrigins.length > 0
-    ? (origin, cb) => {
-        if (!origin) return cb(null, true);
-        if (corsOrigins.includes(origin)) return cb(null, true);
-        return cb(null, false);
-      }
-    : true,
+  ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim()).filter(Boolean)
+  : [];
+
+const corsOptions = {
+  origin: corsOrigins.length > 0 ? corsOrigins : true,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
+  optionsSuccessStatus: 204,
+};
+
+app.use(cors(corsOptions));
+// Refuerzo explícito del preflight (algunos proxies / orden de middlewares).
+app.options('*', cors(corsOptions));
 
 // Logger HTTP
 app.use(morgan('combined', {
@@ -54,7 +56,8 @@ app.use(morgan('combined', {
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutos
   max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 500,
-  message: 'Demasiadas solicitudes desde esta IP, por favor intenta más tarde'
+  message: 'Demasiadas solicitudes desde esta IP, por favor intenta más tarde',
+  skip: (req) => req.method === 'OPTIONS',
 });
 app.use('/api/', limiter);
 
