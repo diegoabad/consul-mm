@@ -158,6 +158,46 @@ const sendTurnoConfirmation = async (turnoData, pacienteEmail) => {
 };
 
 /**
+ * Un solo email con el listado de turnos de una serie recién creada.
+ * @param {Array<Object>} turnosData - Turnos completos (findById)
+ * @param {string} pacienteEmail
+ */
+const sendRecurrenciaCreada = async (turnosData, pacienteEmail) => {
+  if (!turnosData?.length) return null;
+  const first = turnosData[0];
+  const pacienteNombre =
+    nombreCompletoPacienteOProfesional(first.paciente_nombre, first.paciente_apellido) || 'Paciente';
+  const profNombreCompleto =
+    nombreCompletoPacienteOProfesional(first.profesional_nombre, first.profesional_apellido) ||
+    capitalizeNombrePropio(first.profesional_nombre) ||
+    'N/A';
+  const filas = turnosData
+    .map((t) => {
+      const d = t.fecha_hora_inicio ? new Date(t.fecha_hora_inicio) : null;
+      const fechaStr = d ? d.toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+      const horaIni = d ? d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
+      const fin = t.fecha_hora_fin ? new Date(t.fecha_hora_fin) : null;
+      const horaFin = fin ? fin.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
+      return `<li>${fechaStr} — ${horaIni} a ${horaFin}</li>`;
+    })
+    .join('');
+  const html = `
+    <p>Hola ${pacienteNombre},</p>
+    <p>Se te asignaron los siguientes turnos con <strong>${profNombreCompleto}</strong>
+    (${first.profesional_especialidad || first.especialidad || 'N/A'}):</p>
+    <ul>${filas}</ul>
+    <p>Consultorio Cogniare.</p>
+  `;
+  const text = `Hola ${pacienteNombre}, se te asignaron ${turnosData.length} turnos con ${profNombreCompleto}.`;
+  return await sendEmail({
+    to: pacienteEmail,
+    subject: `Turnos asignados (${turnosData.length})`,
+    text,
+    html
+  });
+};
+
+/**
  * Enviar email de recordatorio de turno
  * @param {Object} turnoData - Datos del turno
  * @param {string} pacienteEmail - Email del paciente
@@ -253,6 +293,7 @@ const sendWelcomeEmail = async (usuarioData, email) => {
 module.exports = {
   sendEmail,
   sendTurnoConfirmation,
+  sendRecurrenciaCreada,
   sendTurnoReminder,
   sendTurnoCancellation,
   sendWelcomeEmail

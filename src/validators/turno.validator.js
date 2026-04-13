@@ -96,11 +96,69 @@ const availabilitySchema = Joi.object({
     })
 });
 
+const previewRecurrenciaSchema = Joi.object({
+  profesional_id: Joi.string().uuid().required(),
+  paciente_id: Joi.string().uuid().required(),
+  frecuencia: Joi.string().valid('semanal', 'quincenal', 'mensual').required(),
+  fecha_hora_inicio: Joi.date().iso().required(),
+  fecha_hora_fin: Joi.date().iso().required().greater(Joi.ref('fecha_hora_inicio')),
+  dia_semana: Joi.number().integer().min(0).max(6).optional(),
+  semana_del_mes: Joi.number().integer().min(1).max(4).allow(null).optional(),
+  fecha_fin: Joi.date().iso().allow(null).optional(),
+  max_ocurrencias: Joi.number().integer().min(1).optional(),
+  meses_max: Joi.number().integer().min(1).optional(),
+  permiso_fuera_agenda: Joi.boolean().optional()
+});
+
+const ocurrenciaConfirmadaSchema = Joi.object({
+  fecha_hora_inicio: Joi.date().iso().required(),
+  fecha_hora_fin: Joi.date().iso().required().greater(Joi.ref('fecha_hora_inicio')),
+  permiso_fuera_agenda: Joi.boolean().optional()
+});
+
+const createRecurrenciaSchema = Joi.object({
+  profesional_id: Joi.string().uuid().required(),
+  paciente_id: Joi.string().uuid().required(),
+  motivo: Joi.string().optional().allow(null, ''),
+  permiso_fuera_agenda: Joi.boolean().optional(),
+  serie: Joi.object({
+    frecuencia: Joi.string().valid('semanal', 'quincenal', 'mensual').required(),
+    mensual_modo: Joi.string().valid('nth_weekday', 'dia_calendario').allow(null).optional(),
+    dia_semana: Joi.number().integer().min(0).max(6).allow(null).optional(),
+    semana_del_mes: Joi.number().integer().min(1).max(4).allow(null).optional(),
+    fecha_fin: Joi.date().iso().allow(null).optional(),
+    max_ocurrencias: Joi.number().integer().min(1).optional()
+  }).required(),
+  ocurrencias: Joi.array().items(ocurrenciaConfirmadaSchema).min(1).required()
+});
+
+const deleteTurnoQuerySchema = Joi.object({
+  alcance: Joi.string().valid('solo_este', 'desde_aqui_en_adelante').optional()
+});
+
+const slotIntervaloBatchSchema = Joi.object({
+  fecha_hora_inicio: Joi.date().iso().required(),
+  fecha_hora_fin: Joi.date().iso().required().greater(Joi.ref('fecha_hora_inicio')),
+  permiso_fuera_agenda: Joi.boolean().optional()
+});
+
+/** Máximo alineado con RECURRENCIA_MAX_OCURRENCIAS (52 por defecto) */
+const validarSlotsBatchSchema = Joi.object({
+  profesional_id: Joi.string().uuid().required(),
+  paciente_id: Joi.string().uuid().required(),
+  permiso_fuera_agenda: Joi.boolean().optional(),
+  slots: Joi.array().items(slotIntervaloBatchSchema).min(1).max(52).required()
+});
+
 module.exports = {
   createTurnoSchema,
   updateTurnoSchema,
   cancelTurnoSchema,
   turnoParamsSchema,
   turnoQuerySchema,
-  availabilitySchema
+  availabilitySchema,
+  previewRecurrenciaSchema,
+  createRecurrenciaSchema,
+  deleteTurnoQuerySchema,
+  validarSlotsBatchSchema
 };

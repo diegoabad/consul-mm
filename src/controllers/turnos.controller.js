@@ -9,15 +9,21 @@ const turnoModel = require('../models/turno.model');
 const profesionalModel = require('../models/profesional.model');
 const pacienteModel = require('../models/paciente.model');
 const pacienteProfesionalModel = require('../models/pacienteProfesional.model');
-const bloqueModel = require('../models/bloque.model');
 const agendaModel = require('../models/agenda.model');
 const excepcionAgendaModel = require('../models/excepcionAgenda.model');
 const emailService = require('../services/email.service');
 const { enviarRecordatorioTurno } = require('../services/whatsapp.service');
 const logModel = require('../models/log.model');
+const turnoSerieModel = require('../models/turnoSerie.model');
 const logger = require('../utils/logger');
 const { buildResponse } = require('../utils/helpers');
 const { ESTADOS_TURNO } = require('../utils/constants');
+const { pool } = require('../config/database');
+const { generarOcurrencias } = require('../services/recurrenciaFechas.service');
+const { evaluarSlotTurno, evaluarSlotsTurnoBatch } = require('../services/turnoSlotValidation.service');
+
+const RECURRENCIA_MAX_OCURRENCIAS = parseInt(process.env.RECURRENCIA_MAX_OCURRENCIAS || '52', 10);
+const RECURRENCIA_MESES_MAX = parseInt(process.env.RECURRENCIA_MESES_MAX || '6', 10);
 
 /**
  * Listar turnos con filtros.
@@ -218,39 +224,19 @@ const create = async (req, res, next) => {
     if (!paciente.activo) {
       return res.status(400).json(buildResponse(false, null, 'No se pueden crear turnos para pacientes inactivos'));
     }
-    
-    // Verificar que el profesional atiende ese día y horario: agenda semanal vigente O día puntual (excepción).
-    // Si permiso_fuera_agenda es true (usuario confirmó en el front "turno fuera de horario"), se permite igual.
-    const fechaHoraInicio = new Date(fecha_hora_inicio);
-    if (!permiso_fuera_agenda) {
-      const cubiertoPorAgenda = await agendaModel.vigentConfigCoversDateTime(profesional_id, fechaHoraInicio);
-      const cubiertoPorExcepcion = await excepcionAgendaModel.coversDateTime(profesional_id, fechaHoraInicio);
-      if (!cubiertoPorAgenda && !cubiertoPorExcepcion) {
-        return res.status(400).json(buildResponse(false, null, 'No se pueden crear turnos en días u horarios en que el profesional no atiende'));
-      }
-    }
-    
-    // No permitir que el mismo paciente tenga dos turnos en el mismo horario (misma agenda)
-    const mismoPacienteOcupado = await turnoModel.hasPacienteOverlap(
+
+    const slot = await evaluarSlotTurno({
       profesional_id,
       paciente_id,
-      new Date(fecha_hora_inicio),
-      new Date(fecha_hora_fin)
-    );
-    if (mismoPacienteOcupado) {
-      return res.status(409).json(buildResponse(false, null, 'Este paciente ya tiene un turno en ese horario'));
+      fecha_hora_inicio: new Date(fecha_hora_inicio),
+      fecha_hora_fin: new Date(fecha_hora_fin),
+      permiso_fuera_agenda: Boolean(permiso_fuera_agenda)
+    });
+    if (!slot.ok) {
+      const status = slot.mensaje && slot.mensaje.includes('paciente ya tiene') ? 409 : 400;
+      return res.status(status).json(buildResponse(false, null, slot.mensaje || 'No se puede crear el turno'));
     }
-    
-    // Verificar que no caiga dentro de un bloque no disponible (vacaciones, ausencias, etc.)
-    const hayBloque = await bloqueModel.checkOverlap(
-      profesional_id,
-      new Date(fecha_hora_inicio),
-      new Date(fecha_hora_fin)
-    );
-    if (hayBloque) {
-      return res.status(400).json(buildResponse(false, null, 'El horario está dentro de un período bloqueado'));
-    }
-    
+
     const nuevoTurno = await turnoModel.create({
       profesional_id,
       paciente_id,
@@ -554,6 +540,7 @@ const complete = async (req, res, next) => {
 const deleteTurno = async (req, res, next) => {
   try {
     const { id } = req.params;
+    const alcance = req.query.alcance || 'solo_este';
 
     const turno = await turnoModel.findById(id);
     if (!turno) {
@@ -567,6 +554,23 @@ const deleteTurno = async (req, res, next) => {
       }
     }
 
+    if (alcance === 'desde_aqui_en_adelante') {
+      if (!turno.serie_id) {
+        return res.status(400).json(buildResponse(false, null, 'Este turno no pertenece a una serie'));
+      }
+      const desde = new Date(turno.fecha_hora_inicio);
+      const n = await turnoModel.softDeleteSerieDesde(turno.serie_id, desde);
+      await turnoSerieModel.marcarTerminada(turno.serie_id);
+      logger.info('Serie eliminada desde fecha:', { id, serie_id: turno.serie_id, n });
+      return res.json(
+        buildResponse(true, { id, serie_id: turno.serie_id, eliminados: n }, 'Turnos de la serie eliminados exitosamente')
+      );
+    }
+
+    if (alcance !== 'solo_este') {
+      return res.status(400).json(buildResponse(false, null, 'alcance inválido (use solo_este o desde_aqui_en_adelante)'));
+    }
+
     await turnoModel.deleteById(id);
 
     logger.info('Turno eliminado:', { id });
@@ -574,6 +578,284 @@ const deleteTurno = async (req, res, next) => {
     res.json(buildResponse(true, { id }, 'Turno eliminado exitosamente'));
   } catch (error) {
     logger.error('Error en delete turno:', error);
+    next(error);
+  }
+};
+
+/**
+ * Preview de ocurrencias recurrentes (sin persistir).
+ */
+const previewRecurrencia = async (req, res, next) => {
+  try {
+    const {
+      profesional_id,
+      paciente_id,
+      frecuencia,
+      fecha_hora_inicio,
+      fecha_hora_fin,
+      dia_semana,
+      semana_del_mes,
+      fecha_fin,
+      max_ocurrencias,
+      meses_max,
+      permiso_fuera_agenda = false
+    } = req.body;
+
+    if (req.user.rol === 'profesional') {
+      const profesional = await profesionalModel.findByUserId(req.user.id);
+      if (!profesional || profesional.id !== profesional_id) {
+        return res.status(403).json(buildResponse(false, null, 'Solo puede previsualizar turnos para su propia agenda'));
+      }
+    }
+
+    const capN = Math.min(
+      max_ocurrencias != null ? parseInt(String(max_ocurrencias), 10) : RECURRENCIA_MAX_OCURRENCIAS,
+      RECURRENCIA_MAX_OCURRENCIAS
+    );
+    const mesesCap = Math.min(
+      meses_max != null ? parseInt(String(meses_max), 10) : RECURRENCIA_MESES_MAX,
+      RECURRENCIA_MESES_MAX
+    );
+
+    let ocurrencias;
+    try {
+      ocurrencias = generarOcurrencias({
+        frecuencia,
+        fecha_hora_inicio,
+        fecha_hora_fin,
+        dia_semana,
+        semana_del_mes,
+        fecha_fin: fecha_fin || null,
+        max_ocurrencias: capN,
+        meses_max: mesesCap
+      });
+    } catch (e) {
+      return res.status(400).json(buildResponse(false, null, e.message || 'Regla de recurrencia inválida'));
+    }
+
+    const evaluaciones = await evaluarSlotsTurnoBatch({
+      profesional_id,
+      paciente_id,
+      slots: ocurrencias.map((o) => ({
+        fecha_hora_inicio: o.fecha_hora_inicio,
+        fecha_hora_fin: o.fecha_hora_fin
+      })),
+      permiso_fuera_agenda_default: Boolean(permiso_fuera_agenda)
+    });
+
+    const filas = ocurrencias.map((o, i) => {
+      const ev = evaluaciones[i];
+      return {
+        indice: i + 1,
+        fecha_hora_inicio: o.fecha_hora_inicio.toISOString(),
+        fecha_hora_fin: o.fecha_hora_fin.toISOString(),
+        ok: ev.ok,
+        flags: ev.flags,
+        mensaje: ev.mensaje || null
+      };
+    });
+
+    res.json(buildResponse(true, { ocurrencias: filas }, 'Preview generado'));
+  } catch (error) {
+    logger.error('Error en previewRecurrencia:', error);
+    next(error);
+  }
+};
+
+/**
+ * Crear serie + turnos según lista ya editada en cliente.
+ */
+const createRecurrencia = async (req, res, next) => {
+  let client;
+  try {
+    const {
+      profesional_id,
+      paciente_id,
+      motivo,
+      permiso_fuera_agenda = false,
+      serie: serieMeta,
+      ocurrencias
+    } = req.body;
+
+    if (!serieMeta || !serieMeta.frecuencia) {
+      return res.status(400).json(buildResponse(false, null, 'Datos de serie inválidos'));
+    }
+
+    if (req.user.rol === 'profesional') {
+      const prof = await profesionalModel.findByUserId(req.user.id);
+      if (!prof || prof.id !== profesional_id) {
+        return res.status(403).json(buildResponse(false, null, 'Solo puede crear series para su propia agenda'));
+      }
+    }
+
+    if (!Array.isArray(ocurrencias) || ocurrencias.length === 0) {
+      return res.status(400).json(buildResponse(false, null, 'Debe enviar al menos una ocurrencia'));
+    }
+    if (ocurrencias.length > RECURRENCIA_MAX_OCURRENCIAS) {
+      return res.status(400).json(buildResponse(false, null, `Máximo ${RECURRENCIA_MAX_OCURRENCIAS} turnos por serie`));
+    }
+
+    const profesional = await profesionalModel.findById(profesional_id);
+    if (!profesional) {
+      return res.status(404).json(buildResponse(false, null, 'Profesional no encontrado'));
+    }
+    if (profesional.bloqueado) {
+      return res.status(400).json(buildResponse(false, null, 'No se pueden crear turnos para profesionales bloqueados'));
+    }
+    const paciente = await pacienteModel.findById(paciente_id);
+    if (!paciente) {
+      return res.status(404).json(buildResponse(false, null, 'Paciente no encontrado'));
+    }
+    if (!paciente.activo) {
+      return res.status(400).json(buildResponse(false, null, 'No se pueden crear turnos para pacientes inactivos'));
+    }
+
+    const evalsSerie = await evaluarSlotsTurnoBatch({
+      profesional_id,
+      paciente_id,
+      profesional,
+      paciente,
+      slots: ocurrencias.map((o) => ({
+        fecha_hora_inicio: new Date(o.fecha_hora_inicio),
+        fecha_hora_fin: new Date(o.fecha_hora_fin),
+        permiso_fuera_agenda: o.permiso_fuera_agenda != null ? Boolean(o.permiso_fuera_agenda) : Boolean(permiso_fuera_agenda)
+      }))
+    });
+    for (let i = 0; i < evalsSerie.length; i++) {
+      const ev = evalsSerie[i];
+      if (!ev.ok) {
+        return res.status(400).json(
+          buildResponse(false, { fila: i + 1, flags: ev.flags }, ev.mensaje || 'Validación fallida')
+        );
+      }
+    }
+
+    const solapan = (a0, a1, b0, b1) => a0 < b1 && b0 < a1;
+    const ordenados = ocurrencias
+      .map((o, idx) => ({
+        idx,
+        i0: new Date(o.fecha_hora_inicio).getTime(),
+        i1: new Date(o.fecha_hora_fin).getTime()
+      }))
+      .sort((x, y) => x.i0 - y.i0);
+    for (let a = 0; a < ordenados.length; a++) {
+      for (let b = a + 1; b < ordenados.length; b++) {
+        if (solapan(ordenados[a].i0, ordenados[a].i1, ordenados[b].i0, ordenados[b].i1)) {
+          return res.status(400).json(
+            buildResponse(false, { filas: [ordenados[a].idx + 1, ordenados[b].idx + 1] }, 'Hay turnos solapados entre sí en la lista enviada')
+          );
+        }
+      }
+    }
+
+    const primeraInicio = new Date(ocurrencias[0].fecha_hora_inicio);
+    const primeraFin = new Date(ocurrencias[0].fecha_hora_fin);
+
+    client = await pool.connect();
+    await client.query('BEGIN');
+
+    const serieRow = await turnoSerieModel.create(
+      {
+        profesional_id,
+        paciente_id,
+        frecuencia: serieMeta.frecuencia,
+        mensual_modo: serieMeta.mensual_modo || null,
+        dia_semana: serieMeta.dia_semana != null ? serieMeta.dia_semana : null,
+        semana_del_mes: serieMeta.semana_del_mes,
+        fecha_inicio_serie: primeraInicio,
+        fecha_hora_fin_template: primeraFin,
+        fecha_fin: serieMeta.fecha_fin ? new Date(serieMeta.fecha_fin) : null,
+        max_ocurrencias: serieMeta.max_ocurrencias != null ? serieMeta.max_ocurrencias : ocurrencias.length,
+        creado_por: req.user.id
+      },
+      client
+    );
+
+    const rowsToInsert = ocurrencias.map((o, i) => ({
+      profesional_id,
+      paciente_id,
+      fecha_hora_inicio: new Date(o.fecha_hora_inicio),
+      fecha_hora_fin: new Date(o.fecha_hora_fin),
+      estado: ESTADOS_TURNO.PENDIENTE,
+      sobreturno: false,
+      motivo: motivo || null,
+      serie_id: serieRow.id,
+      serie_secuencia: i + 1
+    }));
+
+    const creados = await turnoModel.createManyWithClient(client, rowsToInsert);
+
+    await client.query('COMMIT');
+
+    try {
+      await pacienteProfesionalModel.create({
+        paciente_id,
+        profesional_id,
+        asignado_por_usuario_id: req.user.id
+      });
+    } catch (err) {
+      logger.error('Error auto-asignando profesional al paciente (serie):', err);
+    }
+
+    const idsOrden = creados.map((t) => t.id);
+    const turnosCompletos = await turnoModel.findByIdsInOrder(idsOrden);
+
+    if (turnosCompletos.length && turnosCompletos[0].paciente_email) {
+      emailService
+        .sendRecurrenciaCreada(turnosCompletos, turnosCompletos[0].paciente_email)
+        .catch((err) => logger.error('Error enviando email recurrencia:', err));
+    }
+
+    res.status(201).json(buildResponse(true, { serie_id: serieRow.id, turnos: turnosCompletos }, 'Serie de turnos creada exitosamente'));
+  } catch (error) {
+    if (client) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (_) {
+        /* no-op */
+      }
+    }
+    logger.error('Error en createRecurrencia:', error);
+    next(error);
+  } finally {
+    if (client) {
+      client.release();
+    }
+  }
+};
+
+/**
+ * Validar disponibilidad de varios intervalos en una sola petición (mismo profesional y paciente).
+ * Útil para vista previa editada o revalidar sin recalcular recurrencia.
+ */
+const validarSlotsBatch = async (req, res, next) => {
+  try {
+    const { profesional_id, paciente_id, permiso_fuera_agenda = false, slots } = req.body;
+
+    if (req.user.rol === 'profesional') {
+      const prof = await profesionalModel.findByUserId(req.user.id);
+      if (!prof || prof.id !== profesional_id) {
+        return res.status(403).json(buildResponse(false, null, 'Solo puede validar turnos para su propia agenda'));
+      }
+    }
+
+    const evaluaciones = await evaluarSlotsTurnoBatch({
+      profesional_id,
+      paciente_id,
+      slots,
+      permiso_fuera_agenda_default: Boolean(permiso_fuera_agenda)
+    });
+
+    const resultados = evaluaciones.map((ev, i) => ({
+      indice: i + 1,
+      ok: ev.ok,
+      flags: ev.flags,
+      mensaje: ev.mensaje || null
+    }));
+
+    res.json(buildResponse(true, { resultados }, 'Validación completada'));
+  } catch (error) {
+    logger.error('Error en validarSlotsBatch:', error);
     next(error);
   }
 };
@@ -589,5 +871,8 @@ module.exports = {
   cancel,
   confirm,
   complete,
-  delete: deleteTurno
+  delete: deleteTurno,
+  previewRecurrencia,
+  createRecurrencia,
+  validarSlotsBatch
 };

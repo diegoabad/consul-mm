@@ -39,7 +39,7 @@ const findAll = async (filters = {}) => {
       SELECT 
         t.id, t.profesional_id, t.paciente_id, t.fecha_hora_inicio::text as fecha_hora_inicio, t.fecha_hora_fin::text as fecha_hora_fin,
         t.estado, t.sobreturno, t.motivo, t.cancelado_por, t.razon_cancelacion,
-        t.fecha_creacion, t.fecha_actualizacion,
+        t.fecha_creacion, t.fecha_actualizacion, t.serie_id, t.serie_secuencia,
         p.matricula, p.especialidad as profesional_especialidad,
         u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido, u_prof.email as profesional_email,
         pac.nombre as paciente_nombre, pac.apellido as paciente_apellido, pac.dni as paciente_dni, pac.telefono as paciente_telefono, pac.whatsapp as paciente_whatsapp, pac.email as paciente_email
@@ -156,7 +156,7 @@ const findAllPaginated = async (filters = {}) => {
       SELECT 
         t.id, t.profesional_id, t.paciente_id, t.fecha_hora_inicio::text as fecha_hora_inicio, t.fecha_hora_fin::text as fecha_hora_fin,
         t.estado, t.sobreturno, t.motivo, t.cancelado_por, t.razon_cancelacion,
-        t.fecha_creacion, t.fecha_actualizacion,
+        t.fecha_creacion, t.fecha_actualizacion, t.serie_id, t.serie_secuencia,
         p.matricula, p.especialidad as profesional_especialidad,
         u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido, u_prof.email as profesional_email,
         pac.nombre as paciente_nombre, pac.apellido as paciente_apellido, pac.dni as paciente_dni, pac.telefono as paciente_telefono, pac.whatsapp as paciente_whatsapp, pac.email as paciente_email
@@ -188,7 +188,7 @@ const findById = async (id) => {
       `SELECT 
         t.id, t.profesional_id, t.paciente_id, t.fecha_hora_inicio::text as fecha_hora_inicio, t.fecha_hora_fin::text as fecha_hora_fin,
         t.estado, t.sobreturno, t.motivo, t.cancelado_por, t.razon_cancelacion,
-        t.fecha_creacion, t.fecha_actualizacion,
+        t.fecha_creacion, t.fecha_actualizacion, t.serie_id, t.serie_secuencia,
         p.matricula, p.especialidad as profesional_especialidad,
         u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido, u_prof.email as profesional_email,
         pac.nombre as paciente_nombre, pac.apellido as paciente_apellido, pac.dni as paciente_dni, pac.telefono as paciente_telefono, pac.whatsapp as paciente_whatsapp, pac.email as paciente_email
@@ -225,7 +225,7 @@ const findByProfesional = async (profesionalId, fechaInicio = null, fechaFin = n
       SELECT 
         t.id, t.profesional_id, t.paciente_id, t.fecha_hora_inicio::text as fecha_hora_inicio, t.fecha_hora_fin::text as fecha_hora_fin,
         t.estado, t.sobreturno, t.motivo, t.cancelado_por, t.razon_cancelacion,
-        t.fecha_creacion, t.fecha_actualizacion,
+        t.fecha_creacion, t.fecha_actualizacion, t.serie_id, t.serie_secuencia,
         pac.nombre as paciente_nombre, pac.apellido as paciente_apellido, pac.dni as paciente_dni, pac.telefono as paciente_telefono, pac.whatsapp as paciente_whatsapp
       FROM turnos t
       INNER JOIN pacientes pac ON t.paciente_id = pac.id
@@ -273,7 +273,7 @@ const findByPaciente = async (pacienteId, fechaInicio = null, fechaFin = null) =
       SELECT 
         t.id, t.profesional_id, t.paciente_id, t.fecha_hora_inicio::text as fecha_hora_inicio, t.fecha_hora_fin::text as fecha_hora_fin,
         t.estado, t.sobreturno, t.motivo, t.cancelado_por, t.razon_cancelacion,
-        t.fecha_creacion, t.fecha_actualizacion,
+        t.fecha_creacion, t.fecha_actualizacion, t.serie_id, t.serie_secuencia,
         p.matricula, p.especialidad as profesional_especialidad,
         u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido
       FROM turnos t
@@ -320,17 +320,16 @@ const findByPaciente = async (pacienteId, fechaInicio = null, fechaFin = null) =
  */
 const checkAvailability = async (profesionalId, fechaHoraInicio, fechaHoraFin, excludeTurnoId = null) => {
   try {
+    // Columnas TIMESTAMP sin TZ guardan componentes UTC (dateToUTCString). Comparar en UTC como en findAll.
+    // Solape estándar: existStart < newFin AND existFin > newIni (mismos instantes que parámetros timestamptz).
     let sql = `
       SELECT COUNT(*) as count
       FROM turnos
       WHERE profesional_id = $1
         AND deleted_at IS NULL
         AND estado NOT IN ($2, $3)
-        AND (
-          (fecha_hora_inicio < $4 AND fecha_hora_fin > $5) OR
-          (fecha_hora_inicio >= $5 AND fecha_hora_inicio < $4) OR
-          (fecha_hora_fin > $5 AND fecha_hora_fin <= $4)
-        )
+        AND (fecha_hora_inicio AT TIME ZONE 'UTC') < $4::timestamptz
+        AND (fecha_hora_fin AT TIME ZONE 'UTC') > $5::timestamptz
     `;
     const params = [
       profesionalId,
@@ -366,11 +365,8 @@ const hasPacienteOverlap = async (profesionalId, pacienteId, fechaHoraInicio, fe
        WHERE profesional_id = $1 AND paciente_id = $2
          AND deleted_at IS NULL
          AND estado NOT IN ($3, $4)
-         AND (
-           (fecha_hora_inicio < $5 AND fecha_hora_fin > $6) OR
-           (fecha_hora_inicio >= $6 AND fecha_hora_inicio < $5) OR
-           (fecha_hora_fin > $6 AND fecha_hora_fin <= $5)
-         )`,
+         AND (fecha_hora_inicio AT TIME ZONE 'UTC') < $5::timestamptz
+         AND (fecha_hora_fin AT TIME ZONE 'UTC') > $6::timestamptz`,
       [
         profesionalId,
         pacienteId,
@@ -407,18 +403,22 @@ const create = async (turnoData) => {
     const finStr = fecha_hora_fin instanceof Date ? dateToUTCString(fecha_hora_fin) : dateToUTCString(new Date(fecha_hora_fin));
     const encMotivo = encrypt(motivo || null);
 
+    const { serie_id = null, serie_secuencia = null } = turnoData;
+
     const result = await query(
       `INSERT INTO turnos (
         profesional_id, paciente_id, fecha_hora_inicio, fecha_hora_fin,
-        estado, sobreturno, motivo
+        estado, sobreturno, motivo, serie_id, serie_secuencia
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING id, profesional_id, paciente_id, fecha_hora_inicio::text as fecha_hora_inicio, fecha_hora_fin::text as fecha_hora_fin,
                 estado, sobreturno, motivo, cancelado_por, razon_cancelacion,
-                fecha_creacion, fecha_actualizacion`,
+                fecha_creacion, fecha_actualizacion, serie_id, serie_secuencia`,
       [
         profesional_id, paciente_id, inicioStr, finStr,
-        estado, Boolean(sobreturno), encMotivo
+        estado, Boolean(sobreturno), encMotivo,
+        serie_id || null,
+        serie_secuencia != null ? serie_secuencia : null
       ]
     );
     const row = result.rows[0];
@@ -598,9 +598,10 @@ const complete = async (id) => {
  * @param {string} id - UUID del turno
  * @returns {Promise<Object|null>} Turno marcado como eliminado o null
  */
-const deleteById = async (id) => {
+const deleteById = async (id, client = null) => {
   try {
-    const result = await query(
+    const q = client ? client.query.bind(client) : query;
+    const result = await q(
       'UPDATE turnos SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL RETURNING id',
       [id]
     );
@@ -609,6 +610,159 @@ const deleteById = async (id) => {
     logger.error('Error en delete turno:', error);
     throw error;
   }
+};
+
+/**
+ * Soft-delete de turnos de una serie con inicio >= desdeInicio (misma columna TIMESTAMP UTC que el resto).
+ */
+const softDeleteSerieDesde = async (serieId, desdeInicio, client = null) => {
+  try {
+    const q = client ? client.query.bind(client) : query;
+    const desdeStr =
+      desdeInicio instanceof Date ? dateToUTCString(desdeInicio) : dateToUTCString(new Date(desdeInicio));
+    const result = await q(
+      `UPDATE turnos SET deleted_at = NOW()
+       WHERE serie_id = $1 AND deleted_at IS NULL AND fecha_hora_inicio >= $2::timestamp`,
+      [serieId, desdeStr]
+    );
+    return result.rowCount;
+  } catch (error) {
+    logger.error('Error en softDeleteSerieDesde:', error);
+    throw error;
+  }
+};
+
+const createWithClient = async (client, turnoData) => {
+  const {
+    profesional_id,
+    paciente_id,
+    fecha_hora_inicio,
+    fecha_hora_fin,
+    estado = ESTADOS_TURNO.PENDIENTE,
+    sobreturno = false,
+    motivo,
+    serie_id = null,
+    serie_secuencia = null
+  } = turnoData;
+  const inicioStr = fecha_hora_inicio instanceof Date ? dateToUTCString(fecha_hora_inicio) : dateToUTCString(new Date(fecha_hora_inicio));
+  const finStr = fecha_hora_fin instanceof Date ? dateToUTCString(fecha_hora_fin) : dateToUTCString(new Date(fecha_hora_fin));
+  const encMotivo = encrypt(motivo || null);
+  const q = client.query.bind(client);
+  const result = await q(
+    `INSERT INTO turnos (
+      profesional_id, paciente_id, fecha_hora_inicio, fecha_hora_fin,
+      estado, sobreturno, motivo, serie_id, serie_secuencia
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    RETURNING id, profesional_id, paciente_id, fecha_hora_inicio::text as fecha_hora_inicio, fecha_hora_fin::text as fecha_hora_fin,
+              estado, sobreturno, motivo, serie_id, serie_secuencia`,
+    [
+      profesional_id, paciente_id, inicioStr, finStr,
+      estado, Boolean(sobreturno), encMotivo,
+      serie_id || null,
+      serie_secuencia != null ? serie_secuencia : null
+    ]
+  );
+  const row = result.rows[0];
+  if (row) {
+    row.fecha_hora_inicio = toISOUTC(row.fecha_hora_inicio);
+    row.fecha_hora_fin = toISOUTC(row.fecha_hora_fin);
+    return decryptTurnoRow(row);
+  }
+  return row;
+};
+
+/**
+ * Insertar varios turnos en una sola sentencia (misma transacción).
+ * @param {import('pg').PoolClient} client
+ * @param {Array<Object>} rows - Mismos campos que createWithClient
+ * @returns {Promise<Array<Object>>} Filas RETURNING en el mismo orden que `rows`
+ */
+const createManyWithClient = async (client, rows) => {
+  if (!rows.length) return [];
+  const q = client.query.bind(client);
+  const placeholders = [];
+  const params = [];
+  let n = 1;
+  for (const turnoData of rows) {
+    const {
+      profesional_id,
+      paciente_id,
+      fecha_hora_inicio,
+      fecha_hora_fin,
+      estado = ESTADOS_TURNO.PENDIENTE,
+      sobreturno = false,
+      motivo,
+      serie_id = null,
+      serie_secuencia = null
+    } = turnoData;
+    const inicioStr =
+      fecha_hora_inicio instanceof Date ? dateToUTCString(fecha_hora_inicio) : dateToUTCString(new Date(fecha_hora_inicio));
+    const finStr =
+      fecha_hora_fin instanceof Date ? dateToUTCString(fecha_hora_fin) : dateToUTCString(new Date(fecha_hora_fin));
+    const encMotivo = encrypt(motivo || null);
+    placeholders.push(
+      `($${n++}, $${n++}, $${n++}, $${n++}, $${n++}, $${n++}, $${n++}, $${n++}, $${n++})`
+    );
+    params.push(
+      profesional_id,
+      paciente_id,
+      inicioStr,
+      finStr,
+      estado,
+      Boolean(sobreturno),
+      encMotivo,
+      serie_id || null,
+      serie_secuencia != null ? serie_secuencia : null
+    );
+  }
+  const result = await q(
+    `INSERT INTO turnos (
+      profesional_id, paciente_id, fecha_hora_inicio, fecha_hora_fin,
+      estado, sobreturno, motivo, serie_id, serie_secuencia
+    )
+    VALUES ${placeholders.join(', ')}
+    RETURNING id, profesional_id, paciente_id, fecha_hora_inicio::text as fecha_hora_inicio, fecha_hora_fin::text as fecha_hora_fin,
+              estado, sobreturno, motivo, serie_id, serie_secuencia`,
+    params
+  );
+  return result.rows.map((row) => {
+    row.fecha_hora_inicio = toISOUTC(row.fecha_hora_inicio);
+    row.fecha_hora_fin = toISOUTC(row.fecha_hora_fin);
+    return decryptTurnoRow(row);
+  });
+};
+
+/**
+ * Mismo resultado enriquecido que findById, para varios IDs, preservando el orden del array.
+ * @param {string[]} ids
+ * @param {import('pg').PoolClient|null} client - opcional (misma conexión que la transacción)
+ */
+const findByIdsInOrder = async (ids, client = null) => {
+  if (!ids?.length) return [];
+  const q = client ? client.query.bind(client) : query;
+  const result = await q(
+    `SELECT 
+      t.id, t.profesional_id, t.paciente_id, t.fecha_hora_inicio::text as fecha_hora_inicio, t.fecha_hora_fin::text as fecha_hora_fin,
+      t.estado, t.sobreturno, t.motivo, t.cancelado_por, t.razon_cancelacion,
+      t.fecha_creacion, t.fecha_actualizacion, t.serie_id, t.serie_secuencia,
+      p.matricula, p.especialidad as profesional_especialidad,
+      u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido, u_prof.email as profesional_email,
+      pac.nombre as paciente_nombre, pac.apellido as paciente_apellido, pac.dni as paciente_dni, pac.telefono as paciente_telefono, pac.whatsapp as paciente_whatsapp, pac.email as paciente_email
+    FROM turnos t
+    INNER JOIN profesionales p ON t.profesional_id = p.id
+    INNER JOIN usuarios u_prof ON p.usuario_id = u_prof.id
+    INNER JOIN pacientes pac ON t.paciente_id = pac.id
+    WHERE t.id = ANY($1::uuid[]) AND t.deleted_at IS NULL
+    ORDER BY array_position($1::uuid[], t.id)`,
+    [ids]
+  );
+  const rows = result.rows.map((r) => ({
+    ...r,
+    fecha_hora_inicio: toISOUTC(r.fecha_hora_inicio),
+    fecha_hora_fin: toISOUTC(r.fecha_hora_fin)
+  }));
+  return decryptTurnoRows(rows);
 };
 
 /**
@@ -780,6 +934,10 @@ module.exports = {
   confirm,
   complete,
   deleteById,
+  softDeleteSerieDesde,
+  createWithClient,
+  createManyWithClient,
+  findByIdsInOrder,
   findParaRecordatorio,
   findParaRecordatorioById,
   marcarRecordatorioEnviado,

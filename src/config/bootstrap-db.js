@@ -54,6 +54,7 @@ const MIGRATIONS_ORDER = [
   '036_listados_performance_indexes.sql',
   '037_consultas_turnos_agenda_indexes.sql',
   '038_profesionales_recordatorio_whatsapp_permitido_admin.sql',
+  '039_turno_series_recurrencia.sql',
 ];
 
 const SALT_ROUNDS = 10;
