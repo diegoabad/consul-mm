@@ -15,6 +15,7 @@
 const turnoModel = require('../models/turno.model');
 const { normalizarTelefono } = require('../services/whatsapp.service');
 const logger = require('../utils/logger');
+const { formatearFechaHoraCorta: formatearFechaHora } = require('../utils/fechaArgentina');
 
 /**
  * Palabras/payloads que significan "confirmar".
@@ -140,21 +141,6 @@ function twimlRespuesta(mensaje) {
   }
   const safe = mensaje.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   return `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${safe}</Message></Response>`;
-}
-
-function formatearFechaHora(val) {
-  if (!val) return '-';
-  try {
-    const d = new Date(typeof val === 'string' && !val.endsWith('Z') ? val + 'Z' : val);
-    if (isNaN(d.getTime())) return String(val);
-    const pad = (n) => String(n).padStart(2, '0');
-    const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
-    const offset = -3 * 60;
-    const local = new Date(d.getTime() + offset * 60000);
-    return `${local.getUTCDate()} de ${meses[local.getUTCMonth()]} a las ${pad(local.getUTCHours())}:${pad(local.getUTCMinutes())}hs`;
-  } catch {
-    return String(val);
-  }
 }
 
 const TWIML_EMPTY = '<?xml version="1.0" encoding="UTF-8"?><Response></Response>';

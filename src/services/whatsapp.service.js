@@ -3,6 +3,7 @@
  */
 
 const logger = require('../utils/logger');
+const { formatearFechaHoraRecordatorio: formatearFechaHora } = require('../utils/fechaArgentina');
 
 let twilioClient = null;
 
@@ -245,23 +246,6 @@ function separarDiaYHoraDesdeFormateado(formateado) {
   const parts = String(formateado).split(' a las ');
   if (parts.length >= 2) return { dia: parts[0].trim(), hora: parts.slice(1).join(' a las ').trim() };
   return { dia: formateado, hora: '-' };
-}
-
-function formatearFechaHora(val) {
-  if (!val) return '-';
-  try {
-    const d = new Date(typeof val === 'string' && !val.endsWith('Z') ? val + 'Z' : val);
-    if (isNaN(d.getTime())) return String(val);
-    const pad = (n) => String(n).padStart(2, '0');
-    const dias = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-    const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-    // Convertir UTC a hora Argentina (UTC-3)
-    const offset = -3 * 60;
-    const local = new Date(d.getTime() + offset * 60000);
-    return `${dias[local.getUTCDay()]} ${local.getUTCDate()} de ${meses[local.getUTCMonth()]} del ${local.getUTCFullYear()} a las ${pad(local.getUTCHours())}:${pad(local.getUTCMinutes())}Hs`;
-  } catch {
-    return String(val);
-  }
 }
 
 module.exports = { enviarMensaje, enviarRecordatorioTurno, normalizarTelefono };

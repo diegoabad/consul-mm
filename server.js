@@ -7,6 +7,9 @@
  */
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
+// Zona horaria del consultorio (agenda, validaciones con fecha “local”, logs). Render: definir TZ o queda este default.
+process.env.TZ = process.env.TZ || 'America/Argentina/Buenos_Aires';
+
 const cron = require('node-cron');
 const logger = require('./src/utils/logger');
 const { bootstrap } = require('./src/config/bootstrap-db');

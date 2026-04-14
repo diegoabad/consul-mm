@@ -155,10 +155,11 @@ app.use(morgan('combined', {
   }
 }));
 
-// Rate limiting (por IP; aumentado para uso normal de la SPA con muchas peticiones)
+// Rate limiting (por IP). La vista Turnos/Agenda hace polling (VITE_AGENDA_REFETCH_MS) y con modal abierto
+// pueden convivir varios useQuery en refetch; 500/15min era fácil de superar → 429 (a veces el navegador lo muestra como red/CORS).
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutos
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 500,
+  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 2000,
   message: 'Demasiadas solicitudes desde esta IP, por favor intenta más tarde',
   skip: (req) => req.method === 'OPTIONS',
 });
