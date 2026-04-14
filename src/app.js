@@ -35,32 +35,13 @@ app.set('trust proxy', 1);
 // Importante: array en `origin`, no callback con cb(null, false) (evita 404 en OPTIONS).
 const corsTestMode = process.env.CORS_TEST_MODE === 'true';
 
-/** Quita barra final; muchos copian la URL del navegador con "/" y CORS compara exacto */
-function normalizeCorsOrigin(s) {
-  if (!s || typeof s !== 'string') return s;
-  let t = s.trim();
-  while (t.endsWith('/')) t = t.slice(0, -1);
-  return t;
-}
-
 const originsRaw = process.env.CORS_ORIGIN || process.env.ALLOWED_ORIGINS || '';
 const corsOrigins = originsRaw
   .split(',')
-  .map((s) => normalizeCorsOrigin(s))
+  .map((s) => s.trim())
   .filter(Boolean);
 
-// Deploy previews (https://abc123--sitio.netlify.app) y cualquier sitio *.netlify.app
-const netlifyOriginRegex = /^https:\/\/.+\.netlify\.app$/i;
-
-// Si definís CORS_ORIGIN (p. ej. solo dominio custom), igual convive el front en *.netlify.app.
-// Por defecto se añade este patrón si hay lista de orígenes; desactivar: CORS_NETLIFY_PREVIEWS=false
-const includeNetlifyWildcard =
-  process.env.CORS_NETLIFY_PREVIEWS === 'false'
-    ? false
-    : process.env.CORS_NETLIFY_PREVIEWS === 'true' ||
-      corsOrigins.some((o) => /\.netlify\.app$/i.test(o)) ||
-      corsOrigins.length > 0;
-
+const netlifyOriginRegex = /^https:\/\/[a-zA-Z0-9-]+\.netlify\.app$/;
 const localhostOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
@@ -74,7 +55,10 @@ if (corsTestMode) {
 } else if (corsOrigins.length === 0) {
   corsOriginValue = true;
 } else {
-  const withNetlify = includeNetlifyWildcard ? [...corsOrigins, netlifyOriginRegex] : [...corsOrigins];
+  const withNetlify =
+    process.env.CORS_NETLIFY_PREVIEWS === 'true'
+      ? [...corsOrigins, netlifyOriginRegex]
+      : [...corsOrigins];
   if (process.env.CORS_ALLOW_LOCALHOST === 'true') {
     const strings = withNetlify.filter((x) => typeof x === 'string');
     const regexes = withNetlify.filter((x) => x instanceof RegExp);
@@ -82,12 +66,6 @@ if (corsTestMode) {
   } else {
     corsOriginValue = withNetlify;
   }
-}
-
-if (!corsTestMode && corsOrigins.length > 0) {
-  logger.info(
-    `CORS: ${corsOrigins.length} origen(es) explícitos${includeNetlifyWildcard ? ' + https://*.netlify.app' : ''}. Solo dominio custom: incluilo en CORS_ORIGIN. Para bloquear Netlify: CORS_NETLIFY_PREVIEWS=false.`
-  );
 }
 
 if (corsTestMode) {
@@ -100,16 +78,8 @@ const corsOptions = {
   origin: corsOriginValue,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: [
-    'Content-Type',
-    'Authorization',
-    'Accept',
-    'X-Requested-With',
-    'If-None-Match',
-    'If-Modified-Since',
-  ],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
   optionsSuccessStatus: 204,
-  maxAge: 86400,
 };
 
 app.use(cors(corsOptions));
