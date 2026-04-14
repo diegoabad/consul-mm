@@ -1,13 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middlewares/auth.middleware');
-const { requirePermission } = require('../middlewares/permissions.middleware');
+const { requireRole } = require('../middlewares/permissions.middleware');
 const { list, enviarManual } = require('../controllers/recordatorios.controller');
 
-// GET  /api/recordatorios             → listado con filtros (solo admin)
-router.get('/', authenticate, requirePermission('usuarios.leer'), list);
+// Misma regla que GET /api/logs: solo administrador (evita 403 si hay permisos personalizados raros en usuarios.leer)
+// GET  /api/recordatorios             → listado con filtros
+router.get('/', authenticate, requireRole('administrador'), list);
 
-// POST /api/recordatorios/turno/:id/enviar → envío manual (solo admin)
-router.post('/turno/:id/enviar', authenticate, requirePermission('usuarios.leer'), enviarManual);
+// POST /api/recordatorios/turno/:id/enviar → envío manual
+router.post('/turno/:id/enviar', authenticate, requireRole('administrador'), enviarManual);
 
 module.exports = router;

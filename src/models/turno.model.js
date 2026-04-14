@@ -399,7 +399,13 @@ const findActiveInWindowForProfesional = async (profesionalId, minInicio, maxFin
          AND (fecha_hora_fin AT TIME ZONE 'UTC') > $5::timestamptz`,
       [profesionalId, ESTADOS_TURNO.CANCELADO, ESTADOS_TURNO.COMPLETADO, maxFin, minInicio]
     );
-    return result.rows;
+    // Misma normalización UTC que findAll / checkAvailability para que turnoSolapaSlot (memoria)
+    // compare instantes coherentes con los slots generados en recurrencia (ISO UTC).
+    return result.rows.map((r) => ({
+      ...r,
+      fecha_hora_inicio: toISOUTC(r.fecha_hora_inicio),
+      fecha_hora_fin: toISOUTC(r.fecha_hora_fin),
+    }));
   } catch (error) {
     logger.error('Error en findActiveInWindowForProfesional turno:', error);
     throw error;

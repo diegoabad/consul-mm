@@ -684,6 +684,46 @@ const previewRecurrencia = async (req, res, next) => {
 };
 
 /**
+ * Validar uno o más intervalos sin persistir (revalidar fila en vista previa de recurrencia).
+ */
+const validarSlotsBatch = async (req, res, next) => {
+  try {
+    const { profesional_id, paciente_id, slots, permiso_fuera_agenda = false } = req.body;
+
+    if (req.user.rol === 'profesional') {
+      const profesional = await profesionalModel.findByUserId(req.user.id);
+      if (!profesional || profesional.id !== profesional_id) {
+        return res.status(403).json(buildResponse(false, null, 'Solo puede validar turnos para su propia agenda'));
+      }
+    }
+
+    const evaluaciones = await evaluarSlotsTurnoBatch({
+      profesional_id,
+      paciente_id,
+      slots: slots.map((s) => ({
+        fecha_hora_inicio: s.fecha_hora_inicio,
+        fecha_hora_fin: s.fecha_hora_fin,
+        permiso_fuera_agenda:
+          s.permiso_fuera_agenda != null ? s.permiso_fuera_agenda : undefined
+      })),
+      permiso_fuera_agenda_default: Boolean(permiso_fuera_agenda)
+    });
+
+    const resultados = evaluaciones.map((ev, i) => ({
+      indice: i + 1,
+      ok: ev.ok,
+      flags: ev.flags,
+      mensaje: ev.mensaje || null
+    }));
+
+    res.json(buildResponse(true, { resultados }, 'Validación completada'));
+  } catch (error) {
+    logger.error('Error en validarSlotsBatch:', error);
+    next(error);
+  }
+};
+
+/**
  * Crear serie + turnos según lista ya editada en cliente.
  */
 const createRecurrencia = async (req, res, next) => {
@@ -860,5 +900,6 @@ module.exports = {
   complete,
   delete: deleteTurno,
   previewRecurrencia,
+  validarSlotsBatch,
   createRecurrencia
 };

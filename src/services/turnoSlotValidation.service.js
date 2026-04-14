@@ -123,7 +123,14 @@ function turnoSolapaSlot(turno, slotInicio, slotFin, excludeTurnoId) {
   if (excludeTurnoId && turno.id === excludeTurnoId) return false;
   const ti = turno.fecha_hora_inicio instanceof Date ? turno.fecha_hora_inicio : new Date(turno.fecha_hora_inicio);
   const tf = turno.fecha_hora_fin instanceof Date ? turno.fecha_hora_fin : new Date(turno.fecha_hora_fin);
-  return ti.getTime() < slotFin.getTime() && tf.getTime() > slotInicio.getTime();
+  const t0 = ti.getTime();
+  const t1 = tf.getTime();
+  const s0 = slotInicio.getTime();
+  const s1 = slotFin.getTime();
+  if (Number.isNaN(t0) || Number.isNaN(t1) || Number.isNaN(s0) || Number.isNaN(s1)) {
+    return false;
+  }
+  return t0 < s1 && t1 > s0;
 }
 
 /**

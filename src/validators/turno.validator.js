@@ -136,6 +136,24 @@ const deleteTurnoQuerySchema = Joi.object({
   alcance: Joi.string().valid('solo_este', 'desde_aqui_en_adelante').optional()
 });
 
+/** Validar varios intervalos (vista previa recurrencia al editar fecha/hora). */
+const validarSlotsBatchSchema = Joi.object({
+  profesional_id: Joi.string().uuid().required(),
+  paciente_id: Joi.string().uuid().required(),
+  permiso_fuera_agenda: Joi.boolean().optional(),
+  slots: Joi.array()
+    .items(
+      Joi.object({
+        fecha_hora_inicio: Joi.date().iso().required(),
+        fecha_hora_fin: Joi.date().iso().required().greater(Joi.ref('fecha_hora_inicio')),
+        permiso_fuera_agenda: Joi.boolean().optional()
+      })
+    )
+    .min(1)
+    .max(52)
+    .required()
+});
+
 module.exports = {
   createTurnoSchema,
   updateTurnoSchema,
@@ -145,5 +163,6 @@ module.exports = {
   availabilitySchema,
   previewRecurrenciaSchema,
   createRecurrenciaSchema,
-  deleteTurnoQuerySchema
+  deleteTurnoQuerySchema,
+  validarSlotsBatchSchema
 };

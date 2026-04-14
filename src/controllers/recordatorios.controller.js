@@ -11,6 +11,7 @@ const { enviarRecordatorioTurno } = require('../services/whatsapp.service');
 const { decrypt } = require('../utils/encryption');
 const logger = require('../utils/logger');
 const { buildResponse } = require('../utils/helpers');
+const { ESTADOS_TURNO } = require('../utils/constants');
 
 /**
  * GET /api/recordatorios
@@ -27,12 +28,10 @@ async function list(req, res) {
       fecha_ultimo_envio_desde,
       fecha_ultimo_envio_hasta,
       estado,
-      page = 1,
-      limit = 20,
     } = req.query;
 
-    const pageNum = Math.max(1, parseInt(page));
-    const limitNum = Math.min(100, Math.max(1, parseInt(limit)));
+    const pageNum = Math.max(1, parseInt(String(req.query.page ?? '1'), 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(String(req.query.limit ?? '20'), 10) || 20));
     const offset = (pageNum - 1) * limitNum;
 
     // Rango por defecto para fecha del turno: -7 días a +60 días desde hoy
@@ -105,7 +104,7 @@ async function list(req, res) {
       INNER JOIN usuarios u_prof ON p.usuario_id = u_prof.id
       INNER JOIN pacientes pac ON t.paciente_id = pac.id
       WHERE (
-        (t.deleted_at IS NULL AND t.estado NOT IN ('CANCELADO'))
+        (t.deleted_at IS NULL AND t.estado <> '${ESTADOS_TURNO.CANCELADO}')
         OR (t.deleted_at IS NOT NULL AND t.recordatorio_enviado = true)
       )
         AND t.fecha_hora_inicio >= $${paramIdx}::date
