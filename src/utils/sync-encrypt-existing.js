@@ -103,19 +103,14 @@ async function syncNotas() {
 // Los archivos NO se cifran (por decisión del cliente: permite backups y acceso directo).
 
 async function syncTurnos() {
-  const res = await query(`SELECT id, motivo, razon_cancelacion FROM turnos`);
+  const res = await query(`SELECT id, razon_cancelacion FROM turnos`);
   let updated = 0;
   for (const row of res.rows) {
-    const hasPlain = needsEncryption(row.motivo) || needsEncryption(row.razon_cancelacion);
-    if (!hasPlain) continue;
+    if (!needsEncryption(row.razon_cancelacion)) continue;
 
-    const encMotivo = needsEncryption(row.motivo) ? encrypt(row.motivo) : row.motivo;
-    const encRazon = needsEncryption(row.razon_cancelacion) ? encrypt(row.razon_cancelacion) : row.razon_cancelacion;
+    const encRazon = encrypt(row.razon_cancelacion);
 
-    await query(
-      `UPDATE turnos SET motivo = $1, razon_cancelacion = $2 WHERE id = $3`,
-      [encMotivo, encRazon, row.id]
-    );
+    await query(`UPDATE turnos SET razon_cancelacion = $1 WHERE id = $2`, [encRazon, row.id]);
     updated++;
   }
   return { total: res.rows.length, updated };

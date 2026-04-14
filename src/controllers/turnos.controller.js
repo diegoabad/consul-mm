@@ -26,6 +26,27 @@ const RECURRENCIA_MAX_OCURRENCIAS = parseInt(process.env.RECURRENCIA_MAX_OCURREN
 const RECURRENCIA_MESES_MAX = parseInt(process.env.RECURRENCIA_MESES_MAX || '6', 10);
 
 /**
+ * Misma forma que findByIdsInOrder, usando profesional/paciente ya cargados.
+ * Evita un segundo SELECT + descifrado masivo tras INSERT de series largas.
+ */
+function enrichTurnosRecurrencia(creados, profesional, paciente) {
+  return creados.map((t) => ({
+    ...t,
+    matricula: profesional.matricula,
+    profesional_especialidad: profesional.especialidad,
+    profesional_nombre: profesional.nombre,
+    profesional_apellido: profesional.apellido,
+    profesional_email: profesional.email,
+    paciente_nombre: paciente.nombre,
+    paciente_apellido: paciente.apellido,
+    paciente_dni: paciente.dni,
+    paciente_telefono: paciente.telefono,
+    paciente_whatsapp: paciente.whatsapp,
+    paciente_email: paciente.email
+  }));
+}
+
+/**
  * Listar turnos con filtros.
  * Si se envían page y/o limit, devuelve respuesta paginada { data, total, page, limit, totalPages }.
  * Si no, devuelve array (para agenda del día).
@@ -786,11 +807,7 @@ const createRecurrencia = async (req, res, next) => {
     }));
 
     const creados = await turnoModel.createManyWithClient(client, rowsToInsert);
-
-    const idsOrden = creados.map((t) => t.id);
-    // Misma conexión/transacción: evita un round-trip extra al pool y libera el cliente
-    // en cuanto hace COMMIT (antes la conexión quedaba tomada hasta el final del handler).
-    const turnosCompletos = await turnoModel.findByIdsInOrder(idsOrden, client);
+    const turnosCompletos = enrichTurnosRecurrencia(creados, profesional, paciente);
 
     await client.query('COMMIT');
     client.release();

@@ -15,12 +15,18 @@ const IV_LENGTH = 16;
 const AUTH_TAG_LENGTH = 16;
 const SCRYPT_SALT = 'consultorio-mm-data-encryption-v1';
 
+/** Clave derivada con scrypt (costosa). Debe calcularse una vez por proceso, no en cada encrypt/decrypt. */
+let derivedKeyCache;
+
 function getKey() {
+  if (derivedKeyCache !== undefined) return derivedKeyCache;
   const pass = process.env.DATA_ENCRYPTION_KEY;
   if (!pass || typeof pass !== 'string' || pass.trim().length < 16) {
+    derivedKeyCache = null;
     return null;
   }
-  return crypto.scryptSync(pass.trim(), SCRYPT_SALT, KEY_LENGTH);
+  derivedKeyCache = crypto.scryptSync(pass.trim(), SCRYPT_SALT, KEY_LENGTH);
+  return derivedKeyCache;
 }
 
 /**
@@ -249,8 +255,8 @@ function decryptEvolucionRows(rows) {
   return rows.map(decryptEvolucionRow);
 }
 
-/** Campos de turnos que se cifran en BD */
-const TURNO_ENCRYPT_FIELDS = ['motivo', 'razon_cancelacion'];
+/** Campos de turnos que se cifran en BD (el motivo va en claro; datos viejos con prefijo encv1: se descifran al leer). */
+const TURNO_ENCRYPT_FIELDS = ['razon_cancelacion'];
 
 function encryptTurnoRow(row) {
   if (!row) return row;
@@ -271,6 +277,7 @@ function decryptTurnoRow(row) {
       out[field] = decrypt(out[field]);
     }
   }
+  // Motivo de turno: siempre en claro en BD (migración: scripts/migrate-decrypt-turnos-motivo.js)
   // Datos de paciente del JOIN (vienen de tabla pacientes, pueden estar cifrados)
   if (out.paciente_nombre != null) out.paciente_nombre = decrypt(out.paciente_nombre);
   if (out.paciente_apellido != null) out.paciente_apellido = decrypt(out.paciente_apellido);

@@ -10,6 +10,10 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 // Zona horaria del consultorio (agenda, validaciones con fecha “local”, logs). Render: definir TZ o queda este default.
 process.env.TZ = process.env.TZ || 'America/Argentina/Buenos_Aires';
 
+const { isEncryptionEnabled } = require('./src/utils/encryption');
+// Una sola derivación scrypt al arrancar (si hay DATA_ENCRYPTION_KEY); evita picos en el primer request con muchos cifrados/descifrados.
+isEncryptionEnabled();
+
 const cron = require('node-cron');
 const logger = require('./src/utils/logger');
 const { bootstrap } = require('./src/config/bootstrap-db');

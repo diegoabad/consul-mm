@@ -424,7 +424,6 @@ const create = async (turnoData) => {
     } = turnoData;
     const inicioStr = fecha_hora_inicio instanceof Date ? dateToUTCString(fecha_hora_inicio) : dateToUTCString(new Date(fecha_hora_inicio));
     const finStr = fecha_hora_fin instanceof Date ? dateToUTCString(fecha_hora_fin) : dateToUTCString(new Date(fecha_hora_fin));
-    const encMotivo = encrypt(motivo || null);
 
     const { serie_id = null, serie_secuencia = null } = turnoData;
 
@@ -439,7 +438,7 @@ const create = async (turnoData) => {
                 fecha_creacion, fecha_actualizacion, serie_id, serie_secuencia`,
       [
         profesional_id, paciente_id, inicioStr, finStr,
-        estado, Boolean(sobreturno), encMotivo,
+        estado, Boolean(sobreturno), motivo || null,
         serie_id || null,
         serie_secuencia != null ? serie_secuencia : null
       ]
@@ -483,7 +482,7 @@ const update = async (id, turnoData) => {
           params.push(val instanceof Date ? dateToUTCString(val) : dateToUTCString(new Date(val)));
           if (field === 'fecha_hora_inicio') fechaCambiada = true;
         } else if (field === 'motivo') {
-          params.push(encrypt(val ?? null));
+          params.push(val ?? null);
         } else {
           params.push(val);
         }
@@ -669,7 +668,6 @@ const createWithClient = async (client, turnoData) => {
   } = turnoData;
   const inicioStr = fecha_hora_inicio instanceof Date ? dateToUTCString(fecha_hora_inicio) : dateToUTCString(new Date(fecha_hora_inicio));
   const finStr = fecha_hora_fin instanceof Date ? dateToUTCString(fecha_hora_fin) : dateToUTCString(new Date(fecha_hora_fin));
-  const encMotivo = encrypt(motivo || null);
   const q = client.query.bind(client);
   const result = await q(
     `INSERT INTO turnos (
@@ -681,7 +679,7 @@ const createWithClient = async (client, turnoData) => {
               estado, sobreturno, motivo, serie_id, serie_secuencia`,
     [
       profesional_id, paciente_id, inicioStr, finStr,
-      estado, Boolean(sobreturno), encMotivo,
+      estado, Boolean(sobreturno), motivo || null,
       serie_id || null,
       serie_secuencia != null ? serie_secuencia : null
     ]
@@ -723,7 +721,6 @@ const createManyWithClient = async (client, rows) => {
       fecha_hora_inicio instanceof Date ? dateToUTCString(fecha_hora_inicio) : dateToUTCString(new Date(fecha_hora_inicio));
     const finStr =
       fecha_hora_fin instanceof Date ? dateToUTCString(fecha_hora_fin) : dateToUTCString(new Date(fecha_hora_fin));
-    const encMotivo = encrypt(motivo || null);
     placeholders.push(
       `($${n++}, $${n++}, $${n++}, $${n++}, $${n++}, $${n++}, $${n++}, $${n++}, $${n++})`
     );
@@ -734,7 +731,7 @@ const createManyWithClient = async (client, rows) => {
       finStr,
       estado,
       Boolean(sobreturno),
-      encMotivo,
+      motivo || null,
       serie_id || null,
       serie_secuencia != null ? serie_secuencia : null
     );
@@ -746,7 +743,8 @@ const createManyWithClient = async (client, rows) => {
     )
     VALUES ${placeholders.join(', ')}
     RETURNING id, profesional_id, paciente_id, fecha_hora_inicio::text as fecha_hora_inicio, fecha_hora_fin::text as fecha_hora_fin,
-              estado, sobreturno, motivo, serie_id, serie_secuencia`,
+              estado, sobreturno, motivo, cancelado_por, razon_cancelacion,
+              fecha_creacion, fecha_actualizacion, serie_id, serie_secuencia`,
     params
   );
   return result.rows.map((row) => {
