@@ -96,7 +96,7 @@ const findAll = async (filters = {}) => {
 
 /**
  * Listar turnos con paginación (mismos filtros que findAll)
- * Para historial de paciente: orden DESC (más recientes primero)
+ * Orden cronológico ascendente (más temprano primero): agenda del día y listados paginados.
  * @param {Object} filters - profesional_id, paciente_id, estado, fecha_inicio, fecha_fin, page, limit
  * @returns {Promise<{ rows: Array, total: number }>}
  */
@@ -161,7 +161,7 @@ const findAllPaginated = async (filters = {}) => {
         u_prof.nombre as profesional_nombre, u_prof.apellido as profesional_apellido, u_prof.email as profesional_email,
         pac.nombre as paciente_nombre, pac.apellido as paciente_apellido, pac.dni as paciente_dni, pac.telefono as paciente_telefono, pac.whatsapp as paciente_whatsapp, pac.email as paciente_email
       ${fromClause}
-      ORDER BY (t.fecha_hora_inicio AT TIME ZONE 'UTC') DESC
+      ORDER BY (t.fecha_hora_inicio AT TIME ZONE 'UTC') ASC
       LIMIT $${paramIndex++} OFFSET $${paramIndex}
     `;
     const dataResult = await query(dataSql, dataParams);
